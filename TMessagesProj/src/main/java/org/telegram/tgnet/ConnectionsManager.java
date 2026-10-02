@@ -45,6 +45,8 @@ import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.StatsController;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.foxmes.FoxMesFeatureGate;
+import org.telegram.messenger.foxmes.FoxMesTransport;
 import org.telegram.utils.proxy.WebProxyConnectionTester;
 import org.telegram.utils.proxy.WebProxyTransport;
 import org.telegram.utils.proxy.ProxySettings;
@@ -77,6 +79,7 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+
 
 import javax.net.ssl.SSLException;
 
@@ -167,6 +170,10 @@ public class ConnectionsManager extends BaseController {
     }
 
     public void failNotRunningRequest(int requestToken) {
+        if (FoxMesFeatureGate.enabled) {
+            FoxMesTransport.getInstance(currentAccount).failNotRunningRequest(requestToken);
+            return;
+        }
         Utilities.stageQueue.postRunnable(() -> {
             native_failNotRunningRequest(currentAccount, requestToken);
         });
@@ -266,6 +273,10 @@ public class ConnectionsManager extends BaseController {
         boolean userPremium = false;
         if (getUserConfig().getCurrentUser() != null) {
             userPremium = getUserConfig().getCurrentUser().premium;
+        }
+        if (FoxMesFeatureGate.enabled) {
+            FoxMesTransport.getInstance(currentAccount).onConnectionsManagerCreated();
+            return;
         }
         init(SharedConfig.buildVersion(), TLRPC.LAYER, BuildVars.APP_ID, deviceModel, systemVersion, appVersion, langCode, systemLangCode, configPath, FileLog.getNetworkLogPath(), pushString, fingerprint, timezoneOffset, getUserConfig().getClientUserId(), userPremium, enablePushConnection);
     }
@@ -394,6 +405,10 @@ public class ConnectionsManager extends BaseController {
     }
 
     private void sendRequestInternal(TLObject object, RequestDelegate onComplete, RequestDelegateTimestamp onCompleteTimestamp, QuickAckDelegate onQuickAck, WriteToSocketDelegate onWriteToSocket, int flags, int datacenterId, int connectionType, boolean immediate, int requestToken) {
+        if (FoxMesFeatureGate.enabled) {
+            FoxMesTransport.getInstance(currentAccount).handle(object, onComplete, onCompleteTimestamp, onQuickAck, onWriteToSocket, flags, datacenterId, connectionType, requestToken);
+            return;
+        }
         if (BuildVars.LOGS_ENABLED) {
             FileLog.d("send request " + object + " with token = " + requestToken);
         }
@@ -577,6 +592,10 @@ public class ConnectionsManager extends BaseController {
     }
 
     public void cancelRequest(int token, boolean notifyServer, Runnable onCancelled) {
+        if (FoxMesFeatureGate.enabled) {
+            FoxMesTransport.getInstance(currentAccount).cancelRequest(token, notifyServer, onCancelled);
+            return;
+        }
         Utilities.stageQueue.postRunnable(() -> {
             if (onCancelled != null) {
                 listenCancel(token, () -> {
@@ -592,12 +611,20 @@ public class ConnectionsManager extends BaseController {
     }
 
     public void cancelRequestsForGuid(int guid) {
+        if (FoxMesFeatureGate.enabled) {
+            FoxMesTransport.getInstance(currentAccount).cancelRequestsForGuid(guid);
+            return;
+        }
         Utilities.stageQueue.postRunnable(() -> {
             native_cancelRequestsForGuid(currentAccount, guid);
         });
     }
 
     public void bindRequestToGuid(int requestToken, int guid) {
+        if (FoxMesFeatureGate.enabled) {
+            FoxMesTransport.getInstance(currentAccount).bindRequestToGuid(requestToken, guid);
+            return;
+        }
         if (guid == 0) {
             return;
         }

@@ -117,6 +117,7 @@ import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.foxmes.FoxMesFeatureGate;
 import org.telegram.messenger.pip.PipSource;
 import org.telegram.messenger.pip.utils.PipUtils;
 import org.telegram.messenger.support.LongSparseIntArray;
@@ -3787,7 +3788,7 @@ public class GroupCallActivity extends BottomSheet implements NotificationCenter
                 if (call == null || call.call == null) return;
                 new UserSelectorBottomSheet(context, currentAccount, 0, null, UserSelectorBottomSheet.TYPE_CALL, true, new DarkBlueThemeResourcesProvider())
                     .exceptUsers(call != null ? call.sortedParticipants.stream().map(p -> DialogObject.getPeerDialogId(p.peer)).collect(Collectors.toSet()) : null)
-                    .setOnShareCallLinkListener(this::openShareConferenceLink)
+                    .setOnShareCallLinkListener(FoxMesFeatureGate.hidesConferenceCallLinks() ? null : this::openShareConferenceLink)
                     .setOnUsersSelector((video, users) -> {
                         if (call == null || call.call == null) return;
                         final String link = call.call.invite_link;
@@ -8665,7 +8666,9 @@ public class GroupCallActivity extends BottomSheet implements NotificationCenter
 
             if (isConference()) {
                 conferenceAddPeopleRow = rowsCount++;
-                conferenceShareLinkRow = rowsCount++;
+                if (!FoxMesFeatureGate.hidesConferenceCallLinks()) {
+                    conferenceShareLinkRow = rowsCount++;
+                }
             } else if (!isRtmpStream() && ((!ChatObject.isChannel(currentChat) || currentChat != null && currentChat.megagroup) && ChatObject.canWriteToChat(currentChat) ||
                     ChatObject.isChannel(currentChat) && currentChat != null && !currentChat.megagroup && ChatObject.isPublic(currentChat))) {
                 addMemberRow = rowsCount++;

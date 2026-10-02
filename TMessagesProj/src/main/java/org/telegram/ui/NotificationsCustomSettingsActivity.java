@@ -64,6 +64,7 @@ import org.telegram.messenger.NotificationsController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.foxmes.FoxMesFeatureGate;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBar;
@@ -1463,8 +1464,10 @@ public class NotificationsCustomSettingsActivity extends BaseFragment implements
                 items.add(ItemInner.asCheck(0, getString(R.string.MessagePreview), enabled));
             }
 
-            soundRow = items.size();
-            items.add(ItemInner.asSetting(3, getString("Sound", R.string.Sound), getSound()));
+            if (!FoxMesFeatureGate.hidesNotificationSounds()) {
+                soundRow = items.size();
+                items.add(ItemInner.asSetting(3, getString("Sound", R.string.Sound), getSound()));
+            }
 
             if (expanded) {
 

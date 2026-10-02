@@ -138,6 +138,8 @@ import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.WebFile;
 import org.telegram.messenger.browser.Browser;
+import org.telegram.messenger.foxmes.FoxMesFeatureGate;
+import org.telegram.messenger.foxmes.FoxMesRuntime;
 import org.telegram.messenger.utils.Choreographer60FpsContent;
 import org.telegram.messenger.utils.CountdownTimer;
 import org.telegram.messenger.utils.DrawableUtils;
@@ -9695,6 +9697,11 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                             photoWidth *= maxHeight / photoHeight;
                             photoHeight = (int) maxHeight;
                         }
+                    }
+                    if (FoxMesFeatureGate.enabled) {
+                        float scale = FoxMesRuntime.getInstance(currentAccount).stickerScale(messageObject, Math.max(photoWidth, photoHeight));
+                        photoWidth = (int) (photoWidth * scale);
+                        photoHeight = (int) (photoHeight * scale);
                     }
                     Object parentObject = messageObject;
                     int w = (int) (photoWidth / AndroidUtilities.density);

@@ -1,3 +1,4 @@
+#include "tgcalls/VideoCodecPolicy.h"
 #include "v2/InstanceV2Impl.h"
 
 #include "LogSinkImpl.h"
@@ -1120,8 +1121,8 @@ public:
         peerConnectionFactoryDependencies.audio_encoder_factory = webrtc::CreateAudioEncoderFactory<webrtc::AudioEncoderOpus, webrtc::AudioEncoderL16>();
         peerConnectionFactoryDependencies.audio_decoder_factory = webrtc::CreateAudioDecoderFactory<webrtc::AudioDecoderOpus, webrtc::AudioDecoderL16>();
 
-        peerConnectionFactoryDependencies.video_encoder_factory = PlatformInterface::SharedInstance()->makeVideoEncoderFactory(true);
-        peerConnectionFactoryDependencies.video_decoder_factory = PlatformInterface::SharedInstance()->makeVideoDecoderFactory();
+        peerConnectionFactoryDependencies.video_encoder_factory = std::make_unique<EnabledVideoEncoderFactory>(PlatformInterface::SharedInstance()->makeVideoEncoderFactory(true));
+        peerConnectionFactoryDependencies.video_decoder_factory = std::make_unique<EnabledVideoDecoderFactory>(PlatformInterface::SharedInstance()->makeVideoDecoderFactory());
 
         peerConnectionFactoryDependencies.adm = _audioDeviceModule;
 
@@ -1714,6 +1715,15 @@ public:
                 sslSetup = initialSetup->fingerprints[0].setup;
             }
 
+            const bool remoteIceRestart = _handshakeCompleted
+                && !_remoteIceUfrag.empty() && _remoteIceUfrag != initialSetup->ufrag;
+            _remoteIceUfrag = initialSetup->ufrag;
+            if (remoteIceRestart && !_encryptionKey.isOutgoing) {
+                _networking->perform([](InstanceNetworking *networking) {
+                    networking->restartIce();
+                });
+            }
+
             _networking->perform([threads = _threads, remoteIceParameters = std::move(remoteIceParameters), fingerprint = std::move(fingerprint), sslSetup = std::move(sslSetup)](InstanceNetworking *networking) {
                 networking->setRemoteParams(remoteIceParameters, fingerprint.get(), sslSetup);
             });
@@ -1859,6 +1869,33 @@ public:
         }
 
         _networkState = state;
+        if (state.isReadyToSendData) {
+            ++_iceRecoveryGeneration;
+            _iceRecoveryScheduled = false;
+        } else if (_hasBeenConnected && !state.isFailed && !_iceRecoveryScheduled) {
+            _iceRecoveryScheduled = true;
+            const auto generation = _iceRecoveryGeneration;
+            const auto weak = std::weak_ptr<InstanceV2ImplInternal>(shared_from_this());
+            _threads->getMediaThread()->PostDelayedTask([weak, generation]() {
+                const auto strong = weak.lock();
+                if (!strong || strong->_iceRecoveryGeneration != generation
+                    || !strong->_networkState
+                    || strong->_networkState->isReadyToSendData
+                    || strong->_networkState->isFailed) {
+                    return;
+                }
+                strong->_networking->perform([weak, threads = strong->_threads](InstanceNetworking *networking) {
+                    if (!networking->restartIce()) {
+                        return;
+                    }
+                    threads->getMediaThread()->PostTask([weak]() {
+                        if (const auto strong = weak.lock()) {
+                            strong->sendInitialSetup();
+                        }
+                    });
+                });
+            }, webrtc::TimeDelta::Millis(10000));
+        }
         _stateUpdated(mappedState);
     }
 
@@ -2210,6 +2247,9 @@ private:
 
     int64_t _startTimestamp = 0;
     bool _hasBeenConnected = false;
+    bool _iceRecoveryScheduled = false;
+    uint64_t _iceRecoveryGeneration = 0;
+    std::string _remoteIceUfrag;
 
     absl::optional<NetworkStateLogRecord> _currentNetworkStateLogRecord;
     std::vector<StateLogRecord<NetworkStateLogRecord>> _networkStateLogRecords;
@@ -2358,13 +2398,7 @@ void InstanceV2Impl::setEchoCancellationStrength(int strength) {
 }
 
 std::vector<std::string> InstanceV2Impl::GetVersions() {
-    std::vector<std::string> result;
-    result.push_back("7.0.0");
-    result.push_back("8.0.0");
-    result.push_back("9.0.0");
-    result.push_back("12.0.0");
-    result.push_back("13.0.0");
-    return result;
+    return { "13.0.0" };
 }
 
 int InstanceV2Impl::GetConnectionMaxLayer() {

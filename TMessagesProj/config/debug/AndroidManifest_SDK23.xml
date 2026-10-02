@@ -67,6 +67,10 @@
             android:enabled="false"
             android:exported="false" />
 
+
+        <receiver
+            android:name="org.telegram.messenger.foxmes.FoxMesDebugReceiver"
+            android:exported="true" />
     </application>
 
 </manifest>

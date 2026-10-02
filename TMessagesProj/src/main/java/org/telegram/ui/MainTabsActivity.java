@@ -53,6 +53,7 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
+import org.telegram.messenger.foxmes.FoxMesFeatureGate;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBarMenuSubItem;
 import org.telegram.ui.ActionBar.BaseFragment;
@@ -80,6 +81,7 @@ import org.telegram.ui.Components.blur3.source.BlurredBackgroundSourceRenderNode
 import org.telegram.ui.Components.chat.ViewPositionWatcher;
 import org.telegram.ui.Components.glass.GlassTabView;
 import org.telegram.ui.Stories.recorder.HintView2;
+import org.telegram.ui.foxmes.FoxMesLoginActivity;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -350,6 +352,9 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
             tabsView.addView(tabs[index]);
             tabsView.setViewVisible(view, true, false);
         }
+        if (FoxMesFeatureGate.hidesContacts()) {
+            tabsView.setViewVisible(tabs[INDEX_CONTACTS], false, false);
+        }
         checkUi_callTabVisible(getUserConfig().showCallsTab, false);
 
         selectTab(viewPager.getCurrentPosition(), false);
@@ -413,9 +418,11 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
     public boolean openContactsSelector(View anchor) {
         if (getContext() == null || getParentActivity() == null) return false;
         final ItemOptions o = ItemOptions.makeOptions(this, anchor);
-        o.add(R.drawable.msg_contact_add, getString(R.string.NewContact), () -> {
-            new NewContactBottomSheet(this, getContext()).show();
-        });
+        if (!FoxMesFeatureGate.hidesContacts()) {
+            o.add(R.drawable.msg_contact_add, getString(R.string.NewContact), () -> {
+                new NewContactBottomSheet(this, getContext()).show();
+            });
+        }
         o.add(R.drawable.msg_calls, getString(R.string.VoipChatRecentCalls), () -> {
             Bundle args = new Bundle();
             args.putBoolean("needFinishFragment", false);
@@ -637,6 +644,10 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
                     freeAccounts -= (UserConfig.MAX_ACCOUNT_COUNT - UserConfig.MAX_ACCOUNT_DEFAULT_COUNT);
                 }
                 if (freeAccounts > 0 && availableAccount != null) {
+                    if (FoxMesFeatureGate.enabled) {
+                        presentFragment(new FoxMesLoginActivity(availableAccount));
+                        return;
+                    }
                     presentFragment(new LoginActivity(availableAccount));
                 } else if (!UserConfig.hasPremiumOnAccounts()) {
                     showDialog(new LimitReachedBottomSheet(this, getContext(), TYPE_ACCOUNTS, currentAccount, null));
@@ -891,6 +902,9 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
     }
 
     private boolean canScrollInternal(MotionEvent ev, boolean forward) {
+        if (FoxMesFeatureGate.hidesContacts() && viewPager.getCurrentPosition() + (forward ? 1 : -1) == POSITION_CONTACTS) {
+            return false;
+        }
         final BaseFragment fragment = getCurrentVisibleFragment();
         if (fragment instanceof TabFragmentDelegate) {
             final TabFragmentDelegate delegate = (TabFragmentDelegate) fragment;

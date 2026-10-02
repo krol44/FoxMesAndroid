@@ -66,6 +66,7 @@ import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.SvgHelper;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.foxmes.FoxMesFeatureGate;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_stories;
 import org.telegram.ui.ActionBar.AlertDialog;
@@ -1459,6 +1460,7 @@ public class ReactionsContainerLayout extends FrameLayout implements Notificatio
             }
 
             //fill default reactions
+            if (!FoxMesFeatureGate.hidesBuiltinReactions()) {
             List<TLRPC.TL_availableReaction> enabledReactions = MediaDataController.getInstance(currentAccount).getEnabledReactionsList();
             for (int i = 0; i < enabledReactions.size(); i++) {
                 ReactionsLayoutInBubble.VisibleReaction visibleReaction = ReactionsLayoutInBubble.VisibleReaction.fromEmojicon(enabledReactions.get(i));
@@ -1466,6 +1468,7 @@ public class ReactionsContainerLayout extends FrameLayout implements Notificatio
                     hashSet.add(visibleReaction);
                     visibleReactions.add(visibleReaction);
                 }
+            }
             }
         }
     }

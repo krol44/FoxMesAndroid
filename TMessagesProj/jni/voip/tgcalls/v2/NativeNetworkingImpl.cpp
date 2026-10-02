@@ -759,6 +759,22 @@ void NativeNetworkingImpl::stop() {
     _localCertificate = rtc::RTCCertificateGenerator::GenerateCertificate(rtc::KeyParams(rtc::KT_ECDSA), absl::nullopt);
 }
 
+bool NativeNetworkingImpl::restartIce() {
+    assert(_threads->getNetworkThread()->IsCurrent());
+    if (!_transportChannel) {
+        return false;
+    }
+    _localIceParameters = PeerIceParameters(
+        rtc::CreateRandomString(cricket::ICE_UFRAG_LENGTH),
+        rtc::CreateRandomString(cricket::ICE_PWD_LENGTH), true);
+    _transportChannel->SetIceParameters(cricket::IceParameters(
+        _localIceParameters.ufrag,
+        _localIceParameters.pwd,
+        _localIceParameters.supportsRenomination));
+    _transportChannel->MaybeStartGathering();
+    return true;
+}
+
 PeerIceParameters NativeNetworkingImpl::getLocalIceParameters() {
     return _localIceParameters;
 }
@@ -837,7 +853,7 @@ void NativeNetworkingImpl::checkConnectionTimeout() {
         }
 
         int64_t currentTimestamp = rtc::TimeMillis();
-        const int64_t maxTimeout = 20000;
+        const int64_t maxTimeout = 90000;
 
         if (!strong->_isConnected && strong->_lastDisconnectedTimestamp + maxTimeout < currentTimestamp) {
             RTC_LOG(LS_INFO) << "NativeNetworkingImpl timeout " << (currentTimestamp - strong->_lastDisconnectedTimestamp) << " ms";

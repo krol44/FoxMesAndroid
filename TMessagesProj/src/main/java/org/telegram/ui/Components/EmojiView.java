@@ -114,6 +114,7 @@ import org.telegram.messenger.SvgHelper;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.foxmes.FoxMesFeatureGate;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.messenger.support.LongSparseIntArray;
 import org.telegram.messenger.utils.ViewOutlineProviderImpl;
@@ -1565,6 +1566,9 @@ public class EmojiView extends FrameLayout implements
         this.allowAnimatedEmoji = needAnimatedEmoji;
         this.resourcesProvider = resourcesProvider;
         this.glassDesign = glassDesign;
+        if (FoxMesFeatureGate.hidesStickerCreation()) {
+            setDisableStickerEditor();
+        }
 
         blurredBackgroundSourceColor = new BlurredBackgroundSourceColor();
         blurredBackgroundSourceColor.setColor(getThemedColor(Theme.key_windowBackgroundWhite));
@@ -2014,7 +2018,7 @@ public class EmojiView extends FrameLayout implements
                         if (firstGifAttach && gifAdapter.getItemCount() > 1) {
                             ignoreLayout = true;
                             gifLayoutManager.scrollToPositionWithOffset(0, 0);
-                            gifSearchField.setVisibility(VISIBLE);
+                            gifSearchField.setVisibility(FoxMesFeatureGate.hidesGifSearch() ? GONE : VISIBLE);
                             gifTabs.onPageScrolled(0, 0);
                             firstGifAttach = false;
                             ignoreLayout = false;
@@ -2114,6 +2118,9 @@ public class EmojiView extends FrameLayout implements
                 };
 //                gifSearchField.setVisibility(INVISIBLE);
                 gifContainer.addView(gifSearchField, new FrameLayout.LayoutParams(LayoutHelper.MATCH_PARENT, searchFieldHeight + AndroidUtilities.getShadowHeight()));
+                if (FoxMesFeatureGate.hidesGifSearch()) {
+                    gifSearchField.setVisibility(GONE);
+                }
 
                 gifTabs = new DraggableScrollSlidingTabStrip(context, resourcesProvider);
                 gifTabs.setType(ScrollSlidingTabStrip.Type.TAB);
@@ -2690,6 +2697,9 @@ public class EmojiView extends FrameLayout implements
                         delegate.onStickersSettingsClick();
                     }
                 });
+                if (FoxMesFeatureGate.hidesStickerStore()) {
+                    forceHideSettingsButton();
+                }
             }
 
             typeTabs = new PagerSlidingTabStrip(context, resourcesProvider);
@@ -5808,8 +5818,10 @@ public class EmojiView extends FrameLayout implements
             gifTabs.addIconTab(0, gifIcons[0]).setContentDescription(getString(R.string.RecentStickers));
         }
 
-        gifTrendingTabNum = gifTabsCount++;
-        gifTabs.addIconTab(1, gifIcons[1]).setContentDescription(getString(R.string.FeaturedGifs));
+        if (!FoxMesFeatureGate.hidesGifSearch()) {
+            gifTrendingTabNum = gifTabsCount++;
+            gifTabs.addIconTab(1, gifIcons[1]).setContentDescription(getString(R.string.FeaturedGifs));
+        }
 
         gifFirstEmojiTabNum = gifTabsCount;
         final int hPadding = AndroidUtilities.dp(13);

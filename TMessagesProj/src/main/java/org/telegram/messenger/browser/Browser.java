@@ -155,7 +155,7 @@ public class Browser {
     }
 
     public static void openUrl(Context context, String url) {
-        if (url == null) {
+        if (TextUtils.isEmpty(url)) {
             return;
         }
         openUrl(context, Uri.parse(url), true);

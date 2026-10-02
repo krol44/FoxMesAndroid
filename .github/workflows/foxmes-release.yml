@@ -1,0 +1,240 @@
+name: FoxMes Android release
+
+on:
+  workflow_dispatch:
+    inputs:
+      only_cache:
+        description: Build once to populate the compiler and Gradle caches, publish nothing.
+        type: boolean
+        default: false
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: foxmes-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+
+
+      - name: Validate version, changelog and tag
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          foxmes/set-version.sh --check
+          python3 foxmes/make-release-notes.py >/dev/null
+          version="$(sed -n 's/^APP_VERSION_NAME=//p' gradle.properties)"
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            test "$GITHUB_REF_NAME" = "v$version" || {
+              echo "Tag $GITHUB_REF_NAME does not match APP_VERSION_NAME=$version" >&2
+              exit 1
+            }
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  android:
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    environment: android-signing
+    outputs:
+      signing_cert: ${{ steps.build.outputs.signing_cert }}
+    env:
+      FOXMES_VERSION: ${{ needs.validate.outputs.version }}
+      ONLY_CACHE: ${{ github.event.inputs.only_cache == 'true' && '1' || '0' }}
+    steps:
+      - name: Check the signing secrets
+        if: ${{ github.event.inputs.only_cache != 'true' }}
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
+            echo "ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD must be set in the android-signing environment" >&2
+            exit 1
+          fi
+
+      - name: Free disk space
+        shell: bash
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/share/swift \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/powershell /usr/local/share/chromium
+          df -h /
+
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          submodules: recursive
+
+      - name: Install the Android toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes ccache
+          (yes || true) | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "build-tools;36.0.0" "platforms;android-36" "ndk;27.2.12479018" "cmake;3.22.1"
+          echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+
+      - name: Restore the compiler cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ${{ runner.temp }}/foxmes-ccache
+          key: Android-ccache-${{ github.run_id }}
+          restore-keys: Android-ccache-
+
+      - name: Restore the Gradle cache
+        id: gradle-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: Android-gradle-${{ hashFiles('**/*.gradle', 'gradle.properties', 'gradle/wrapper/gradle-wrapper.properties', 'buildSrc/**') }}
+          restore-keys: Android-gradle-
+
+      - name: Build the release APK
+        id: build
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          FOXMES_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          FOXMES_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          FOXMES_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          FOXMES_CCACHE: '1'
+          CCACHE_DIR: ${{ runner.temp }}/foxmes-ccache
+          CCACHE_BASEDIR: ${{ github.workspace }}
+          CCACHE_MAXSIZE: 5G
+          CCACHE_COMPILERCHECK: content
+        run: |
+          set -euo pipefail
+          if [ "$ONLY_CACHE" = "1" ]; then
+            unset FOXMES_KEYSTORE_PASSWORD FOXMES_KEY_ALIAS FOXMES_KEY_PASSWORD
+          else
+            export FOXMES_KEYSTORE_FILE="$RUNNER_TEMP/foxmes-release.jks"
+            export FOXMES_REQUIRE_RELEASE_KEY=1
+            printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$FOXMES_KEYSTORE_FILE"
+            trap 'rm -f "$FOXMES_KEYSTORE_FILE"' EXIT
+          fi
+          ccache --zero-stats
+          bash foxmes/build-android.sh
+          ccache --show-stats
+          echo "signing_cert=$(cat artifacts/android-signing-sha256.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Save the compiler cache
+        if: always() && steps.build.outcome == 'success' && github.ref_name == github.event.repository.default_branch
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ${{ runner.temp }}/foxmes-ccache
+          key: Android-ccache-${{ github.run_id }}
+
+      - name: Save the Gradle cache
+        if: always() && steps.build.outcome == 'success' && steps.gradle-cache.outputs.cache-hit != 'true' && github.ref_name == github.event.repository.default_branch
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ steps.gradle-cache.outputs.cache-primary-key }}
+
+      - name: Upload the APK
+        if: ${{ github.event.inputs.only_cache != 'true' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: foxmes-android
+          path: artifacts/android/*
+          if-no-files-found: error
+
+      - name: Upload the R8 mapping
+        if: ${{ github.event.inputs.only_cache != 'true' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: foxmes-android-mapping
+          path: artifacts/android-mapping/*
+          retention-days: 90
+          if-no-files-found: error
+
+  provenance:
+    if: ${{ github.event.inputs.only_cache != 'true' }}
+    needs: android
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Check out release tooling
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - name: Download the APK
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3
+        with:
+          name: foxmes-android
+          path: release
+      - name: Create version manifest and checksums
+        shell: bash
+        run: |
+          python3 foxmes/make-release-manifest.py release
+          cd release
+          sha256sum --check --strict SHA256SUMS
+      - name: Attest release artifacts
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d
+        with:
+          subject-path: release/*
+      - name: Upload complete release set
+        if: ${{ github.event.inputs.only_cache != 'true' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: foxmes-release
+          path: release/*
+          if-no-files-found: error
+
+  publish:
+    if: github.ref_type == 'tag'
+    needs: [validate, android, provenance]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Check out release notes
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - name: Download complete release set
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3
+        with:
+          name: foxmes-release
+          path: release
+      - name: Build release notes
+        shell: bash
+        env:
+          SIGNING_CERT: ${{ needs.android.outputs.signing_cert }}
+        run: |
+          python3 foxmes/make-release-notes.py \
+            --signing-cert "$SIGNING_CERT" \
+            --output "$RUNNER_TEMP/release-notes.md"
+          cat "$RUNNER_TEMP/release-notes.md"
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FOXMES_VERSION: ${{ needs.validate.outputs.version }}
+        shell: bash
+        run: |
+          gh release create "$GITHUB_REF_NAME" release/* \
+            --verify-tag \
+            --title "FoxMes Android $FOXMES_VERSION" \
+            --notes-file "$RUNNER_TEMP/release-notes.md"

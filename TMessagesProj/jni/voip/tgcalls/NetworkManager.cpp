@@ -293,7 +293,7 @@ void NetworkManager::checkConnectionTimeout() {
         }
         
         int64_t currentTimestamp = rtc::TimeMillis();
-        const int64_t maxTimeout = 20000;
+        const int64_t maxTimeout = 90000;
         
         if (strong->_lastNetworkActivityMs + maxTimeout < currentTimestamp) {
             NetworkManager::State emitState;

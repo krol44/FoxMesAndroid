@@ -114,6 +114,7 @@ import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.VideoEditedInfo;
+import org.telegram.messenger.foxmes.FoxMesFeatureGate;
 import org.telegram.messenger.utils.EphemeralMessagesHelper;
 import org.telegram.messenger.utils.FBool;
 import org.telegram.messenger.utils.GradientProtectionDrawable;
@@ -6738,17 +6739,17 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
                 if (plainTextEnabled) {
                     locationButton = buttonsCount++;
                 }
-                if (plainTextEnabled && MessagesController.getInstance(currentAccount).richEditorAvailable()) {
+                if (plainTextEnabled && MessagesController.getInstance(currentAccount).richEditorAvailable() && !FoxMesFeatureGate.hidesRichTextArticles()) {
                     richButton = buttonsCount++;
                 }
 
-                if (pollsEnabled) {
+                if (pollsEnabled && !FoxMesFeatureGate.hidesPolls()) {
                     pollButton = buttonsCount++;
                 }
-                if (todoEnabled) {
+                if (todoEnabled && !FoxMesFeatureGate.hidesChecklists()) {
                     todoButton = buttonsCount++;
                 }
-                if (plainTextEnabled) {
+                if (plainTextEnabled && !FoxMesFeatureGate.hidesContacts()) {
                     contactButton = buttonsCount++;
                 }
                 if (baseFragment instanceof ChatActivity && ((ChatActivity) baseFragment).getChatMode() == 0 && user != null && !paidUser && !user.bot && QuickRepliesController.getInstance(currentAccount).hasReplies()) {

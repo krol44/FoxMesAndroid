@@ -30,6 +30,7 @@ import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
+import org.telegram.messenger.foxmes.FoxMesFeatureGate;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
@@ -44,6 +45,7 @@ import org.telegram.ui.Components.AlertsCreator;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.Premium.LimitReachedBottomSheet;
 import org.telegram.ui.Components.RecyclerListView;
+import org.telegram.ui.foxmes.FoxMesLoginActivity;
 
 import java.util.ArrayList;
 
@@ -75,17 +77,25 @@ public class LogoutActivity extends BaseFragment {
         } else {
             addAccountRow = -1;
         }
-        if (SharedConfig.passcodeHash.length() <= 0) {
+        if (SharedConfig.passcodeHash.length() <= 0 && !FoxMesFeatureGate.hidesLogoutAlternatives()) {
             passcodeRow = rowCount++;
         } else {
             passcodeRow = -1;
         }
         cacheRow = rowCount++;
-        phoneRow = rowCount++;
-        supportRow = rowCount++;
+        if (!FoxMesFeatureGate.hidesLogoutAlternatives()) {
+            phoneRow = rowCount++;
+            supportRow = rowCount++;
+        } else {
+            phoneRow = supportRow = -1;
+        }
         alternativeSectionRow = rowCount++;
         logoutRow = rowCount++;
-        logoutSectionRow = rowCount++;
+        if (!FoxMesFeatureGate.hidesSecretChats()) {
+            logoutSectionRow = rowCount++;
+        } else {
+            logoutSectionRow = -1;
+        }
 
         return true;
     }
@@ -134,6 +144,10 @@ public class LogoutActivity extends BaseFragment {
                     freeAccounts -= (UserConfig.MAX_ACCOUNT_COUNT - UserConfig.MAX_ACCOUNT_DEFAULT_COUNT);
                 }
                 if (freeAccounts > 0 && availableAccount != null) {
+                    if (FoxMesFeatureGate.enabled) {
+                        presentFragment(new FoxMesLoginActivity(availableAccount));
+                        return;
+                    }
                     presentFragment(new LoginActivity(availableAccount));
                 } else if (!UserConfig.hasPremiumOnAccounts()) {
                     LimitReachedBottomSheet limitReachedBottomSheet = new LimitReachedBottomSheet(this, getContext(), TYPE_ACCOUNTS, currentAccount, null);

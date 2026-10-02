@@ -974,7 +974,7 @@ public:
             }
 
             int64_t currentTimestamp = rtc::TimeMillis();
-            const int64_t maxTimeout = 20000;
+            const int64_t maxTimeout = 90000;
 
             if (!strong->_isConnected && !strong->_isFailed && strong->_lastDisconnectedTimestamp + maxTimeout < currentTimestamp) {
                 RTC_LOG(LS_INFO) << "InstanceV2ReferenceImpl: connection timeout " << (currentTimestamp - strong->_lastDisconnectedTimestamp) << " ms";

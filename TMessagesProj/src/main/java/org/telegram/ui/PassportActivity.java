@@ -7380,7 +7380,7 @@ public class PassportActivity extends BaseFragment implements NotificationCenter
 
                         Intent mailer = new Intent(Intent.ACTION_SENDTO);
                         mailer.setData(Uri.parse("mailto:"));
-                        mailer.putExtra(Intent.EXTRA_EMAIL, new String[]{"sms@telegram.org"});
+                        mailer.putExtra(Intent.EXTRA_EMAIL, new String[]{"support@foxtail.ing"});
                         mailer.putExtra(Intent.EXTRA_SUBJECT, "Android registration/login issue " + version + " " + phone);
                         mailer.putExtra(Intent.EXTRA_TEXT, "Phone: " + phone + "\nApp version: " + version + "\nOS version: SDK " + Build.VERSION.SDK_INT + "\nDevice Name: " + Build.MANUFACTURER + Build.MODEL + "\nLocale: " + Locale.getDefault() + "\nError: " + lastError);
                         getContext().startActivity(Intent.createChooser(mailer, "Send email..."));

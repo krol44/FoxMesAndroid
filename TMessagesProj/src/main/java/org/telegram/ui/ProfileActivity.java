@@ -165,6 +165,7 @@ import org.telegram.messenger.SvgHelper;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.foxmes.FoxMesFeatureGate;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.SerializedData;
@@ -317,6 +318,8 @@ import org.telegram.ui.bots.BotWebViewAttachedSheet;
 import org.telegram.ui.bots.ChannelAffiliateProgramsFragment;
 import org.telegram.ui.bots.SetupEmojiStatusSheet;
 import org.telegram.ui.community.CommunitySheet;
+import org.telegram.ui.foxmes.FoxMesLoginActivity;
+import org.telegram.ui.foxmes.FoxMesUi;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
@@ -2489,6 +2492,9 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 args.putLong("user_id", userId);
                 presentFragment(new QrActivity(args));
             });
+            if (FoxMesFeatureGate.hidesQrCodes()) {
+                actionBar.backButtonImageView.setVisibility(View.GONE);
+            }
         } else {
             actionBar.setBackButtonDrawable(new BackDrawable(false));
             actionBar.getBackButton().setTranslationX(dp(2));
@@ -2549,6 +2555,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         return;
                     }
                     finishFragment();
+                } else if (id == FoxMesUi.CREATE_MEET) {
+                    FoxMesUi.createMeet(ProfileActivity.this, userId);
                 } else if (id == block_contact) {
                     onBlockContactClicked(false);
                 } else if (id == add_contact) {
@@ -2661,6 +2669,10 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         presentFragment(fragment);
                     }
                 } else if (id == edit_profile) {
+                    if (FoxMesFeatureGate.hidesProfileEditing()) {
+                        FoxMesUi.openProfileSettings(getParentActivity(), currentAccount);
+                        return;
+                    }
                     presentFragment(new UserInfoActivity());
                 } else if (id == invite_to_group) {
                     final TLRPC.User user = getMessagesController().getUser(userId);
@@ -2808,6 +2820,10 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         });
                     }
                 } else if (id == edit_info) {
+                    if (FoxMesFeatureGate.hidesProfileEditing()) {
+                        FoxMesUi.openProfileSettings(getParentActivity(), currentAccount);
+                        return;
+                    }
                     presentFragment(new UserInfoActivity());
                 } else if (id == edit_color) {
 //                    if (!getUserConfig().isPremium()) {
@@ -2817,6 +2833,10 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     presentFragment(new PeerColorActivity(0).startOnProfile().setOnApplied(ProfileActivity.this));
                 } else if (id == copy_link_profile) {
                     TLRPC.User user = getMessagesController().getUser(userId);
+                    if (FoxMesFeatureGate.enabled) {
+                        FoxMesUi.copyProfileLink(user);
+                        return;
+                    }
                     AndroidUtilities.addToClipboard(getMessagesController().linkPrefix + "/" + UserObject.getPublicUsername(user));
                 } else if (id == set_username) {
                     presentFragment(new ChangeUsernameActivity());
@@ -3943,9 +3963,17 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         onBlockContactClicked(true);
                         break;
                     case ProfileActionsView.KEY_SET_PHOTO:
+                        if (FoxMesFeatureGate.hidesProfileEditing()) {
+                            FoxMesUi.openProfileSettings(getParentActivity(), currentAccount);
+                            break;
+                        }
                         onWriteButtonClick();
                         break;
                     case ProfileActionsView.KEY_EDIT_INFO:
+                        if (FoxMesFeatureGate.hidesProfileEditing()) {
+                            FoxMesUi.openProfileSettings(getParentActivity(), currentAccount);
+                            break;
+                        }
                         presentFragment(new UserInfoActivity());
                         break;
                     case ProfileActionsView.KEY_EDIT_USERNAME:
@@ -3954,16 +3982,22 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         ItemOptions itemOptions = ItemOptions.makeOptions(this, actionsView);
                         itemOptions.setLongPressSelectionEnabled(false);
                         itemOptions.setGravity(Gravity.LEFT);
-                        itemOptions.add(R.drawable.msg_qrcode, getString(R.string.QrCode), () -> {
-                            Bundle args = new Bundle();
-                            args.putLong("chat_id", chatId);
-                            args.putLong("user_id", userId);
-                            presentFragment(new QrActivity(args));
-                        });
+                        if (!FoxMesFeatureGate.hidesQrCodes()) {
+                            itemOptions.add(R.drawable.msg_qrcode, getString(R.string.QrCode), () -> {
+                                Bundle args = new Bundle();
+                                args.putLong("chat_id", chatId);
+                                args.putLong("user_id", userId);
+                                presentFragment(new QrActivity(args));
+                            });
+                        }
                         itemOptions.add(R.drawable.msg_copy, getString(R.string.ProfileCopyUsername), () -> {
                             AndroidUtilities.addToClipboard("@" + UserObject.getPublicUsername(user));
                         });
                         itemOptions.add(R.drawable.msg_edit, getString(R.string.ProfileUsernameEdit), () -> {
+                            if (FoxMesFeatureGate.hidesProfileEditing()) {
+                                FoxMesUi.openProfileSettings(getParentActivity(), currentAccount);
+                                return;
+                            }
                             presentFragment(new ChangeUsernameActivity());
                         });
                         itemOptions.forceBottom(true);
@@ -5714,7 +5748,9 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
 
                 if (actionsView != null) {
                     actionsView.beginApplyingActions();
-                    actionsView.addCameraAction();
+                    if (!FoxMesFeatureGate.hidesProfileEditing()) {
+                        actionsView.addCameraAction();
+                    }
                     actionsView.addEditInfo();
                     actionsView.addSettings();
                     actionsView.commitActions();
@@ -10801,7 +10837,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     divider = true;
                 }
 
-                if (!myProfile && showAddToContacts && user != null && !user.contact && !user.bot && !UserObject.isService(user.id)) {
+                if (!myProfile && showAddToContacts && !FoxMesFeatureGate.hidesContacts() && user != null && !user.contact && !user.bot && !UserObject.isService(user.id)) {
                     addToContactsRow = rowCount++;
                     divider = true;
                 }
@@ -10820,7 +10856,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     reportDividerRow = rowCount++;
                 }
 
-                if (hasMedia || (user != null && user.bot && user.bot_can_edit && user.bot_has_main_app) || userInfo != null && userInfo.common_chats_count != 0 || myProfile) {
+                if ((hasMedia || (user != null && user.bot && user.bot_can_edit && user.bot_has_main_app) || userInfo != null && userInfo.common_chats_count != 0 || myProfile) && !(myProfile && FoxMesFeatureGate.hidesStories())) {
                     sharedMediaRow = rowCount++;
                 } else if (lastSectionRow == -1 && needSendMessage) {
                     sendMessageRow = rowCount++;
@@ -11468,7 +11504,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         rightIconIsPremium = false;
                         nameTextView[a].setRightDrawable(getEmojiStatusDrawable(user.emoji_status, false, false, a));
                         nameTextViewRightDrawableContentDescription = LocaleController.getString(R.string.AccDescrPremium);
-                    } else if (getMessagesController().isPremiumUser(user)) {
+                    } else if (getMessagesController().isPremiumUser(user) && !FoxMesFeatureGate.hidesPremiumBadge()) {
                         rightIconIsStatus = false;
                         rightIconIsPremium = true;
                         nameTextView[a].setRightDrawable(getEmojiStatusDrawable(null, false, false, a));
@@ -11489,7 +11525,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         rightIconIsStatus = true;
                         rightIconIsPremium = false;
                         nameTextView[a].setRightDrawable(getEmojiStatusDrawable(user.emoji_status, true, true, a));
-                    } else if (getMessagesController().isPremiumUser(user)) {
+                    } else if (getMessagesController().isPremiumUser(user) && !FoxMesFeatureGate.hidesPremiumBadge()) {
                         rightIconIsStatus = false;
                         rightIconIsPremium = true;
                         nameTextView[a].setRightDrawable(getEmojiStatusDrawable(null, true, true, a));
@@ -11507,7 +11543,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 if (a == 1 && (rightIconIsStatus || rightIconIsPremium)) {
                     nameTextView[a].setRightDrawableOutside(true);
                 }
-                if (user.self && getMessagesController().isPremiumUser(user)) {
+                if (user.self && getMessagesController().isPremiumUser(user) && !FoxMesFeatureGate.hidesPremiumBadge()) {
                     nameTextView[a].setRightDrawableOnClick(v -> {
                         showStatusSelect();
                     });
@@ -12319,6 +12355,14 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             }
         }
 
+        if (selfUser && FoxMesFeatureGate.hidesProfileEditing()) {
+            otherItem.hideSubItem(edit_color);
+            otherItem.hideSubItem(set_username);
+        } else if (userId != 0 && !selfUser && FoxMesFeatureGate.hidesPeerMoreMenu()) {
+            otherItem.removeAllSubItems();
+            FoxMesUi.addCreateMeet(otherItem, getMessagesController().getUser(userId));
+        }
+
         if (imageUpdater != null) {
             otherItem.addSubItem(set_as_main, R.drawable.msg_openprofile, LocaleController.getString(R.string.SetAsMain));
             otherItem.addSubItem(gallery_menu_save, R.drawable.msg_gallery, LocaleController.getString(R.string.SaveToGallery));
@@ -12331,7 +12375,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             otherItem.hideSubItem(gallery_menu_save);
         }
 
-        if (userId != 0 && !isBot && !myProfile) {
+        if (userId != 0 && !isBot && !myProfile && !FoxMesFeatureGate.hidesPeerMoreMenu()) {
             otherItem.addSubItem(report, R.drawable.msg_report, LocaleController.getString(R.string.ReportBot)).setColors(getThemedColor(Theme.key_text_RedRegular), getThemedColor(Theme.key_text_RedRegular));
         }
 
@@ -13555,7 +13599,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                             } else {
                                 text = "—";
                             }
-                            containsQr = !myProfile;
+                            containsQr = !myProfile && !FoxMesFeatureGate.hidesQrCodes();
                         } else if (currentChat != null) {
                             TLRPC.Chat chat = getMessagesController().getChat(chatId);
                             username = ChatObject.getPublicUsername(chat);
@@ -14552,6 +14596,10 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                             }
                         }
                         if (freeAccount >= 0) {
+                            if (FoxMesFeatureGate.enabled) {
+                                f.presentFragment(new FoxMesLoginActivity(freeAccount));
+                                return;
+                            }
                             f.presentFragment(new LoginActivity(freeAccount));
                         }
                     }).withLink("tg://settings/edit/add-account"),

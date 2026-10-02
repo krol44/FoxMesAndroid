@@ -1,46 +1,63 @@
-## Telegram messenger for Android
+# FoxMes Android
 
-[Telegram](https://telegram.org) is a messaging app with a focus on speed and security. It’s superfast, simple and free.
-This repo contains the official source code for [Telegram App for Android](https://play.google.com/store/apps/details?id=org.telegram.messenger).
+FoxMes Android is built on the Telegram for Android core.
 
-## Creating your Telegram Application
+## Installing the APK
 
-We welcome all developers to use our API and source code to create applications on our platform.
-There are several things we require from **all developers** for the moment.
+FoxMes Android 1.0.4 is distributed through [GitHub Releases](https://github.com/krol44/FoxMesAndroid/releases) rather than Google Play. Before installing, verify the downloaded file against `SHA256SUMS` from the same GitHub release:
 
-1. [**Obtain your own api_id**](https://core.telegram.org/api/obtaining_api_id) for your application.
-2. Please **do not** use the name Telegram for your app — or make sure your users understand that it is unofficial.
-3. Kindly **do not** use our standard logo (white paper plane in a blue circle) as your app's logo.
-3. Please study our [**security guidelines**](https://core.telegram.org/mtproto/security_guidelines) and take good care of your users' data and privacy.
-4. Please remember to publish **your** code too in order to comply with the licences.
+```bash
+sha256sum --check --ignore-missing SHA256SUMS
+```
 
-### API, Protocol documentation
+Then open `FoxMes-1.0.4-android.apk` on the phone. Android asks once to allow installing apps from the browser or file manager you opened it with: select **Settings → Allow from this source** and go back to finish the installation.
 
-Telegram API manuals: https://core.telegram.org/api
+Every release is signed with the same FoxMes key, so a newer APK installs over the old one and keeps your data. The SHA-256 fingerprint of the signing certificate is:
 
-MTproto protocol manuals: https://core.telegram.org/mtproto
+```
+25:FF:DF:1F:A1:E8:67:63:DF:D7:D2:3F:9D:5A:9E:EE:29:84:07:F0:78:E5:F7:D7:33:8F:53:A2:05:48:1D:EF
+```
 
-### Compilation Guide
+Check it with `apksigner`, which prints the same digest in lower case without colons:
 
-**Note**: In order to support [reproducible builds](https://core.telegram.org/reproducible-builds), this repo contains dummy release.keystore,  google-services.json and filled variables inside BuildVars.java. Before publishing your own APKs please make sure to replace all these files with your own.
+```bash
+apksigner verify --print-certs FoxMes-1.0.4-android.apk
+```
 
-You will require Android Studio 2025.1.4, Android NDK 27.2.12479018 and Android SDK 36.
+If Android reports that the package conflicts with an existing one, a build signed with a different key is installed — uninstall it first.
 
-1. Clone the Telegram source code with its submodules:
-   ```bash
-   git clone --recursive --shallow-submodules https://github.com/DrKLO/Telegram.git Telegram
-   ```
-   In case you forgot the `--recursive` flag, change to the `Telegram` directory and run:
-   ```bash
-   git submodule init && git submodule update --init --recursive --depth=1
-   ```
-2. Copy your release.keystore into TMessagesProj/config
-3. Fill out RELEASE_KEY_PASSWORD, RELEASE_KEY_ALIAS, RELEASE_STORE_PASSWORD in gradle.properties to access your  release.keystore
-4.  Go to https://console.firebase.google.com/, create two android apps with application IDs org.telegram.messenger and org.telegram.messenger.beta, turn on firebase messaging and download google-services.json, which should be copied to the same folder as TMessagesProj.
-5. Open the project in the Studio (note that it should be opened, NOT imported).
-6. Fill out values in TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java – there’s a link for each of the variables showing where and which data to obtain.
-7. You are ready to compile Telegram.
+## Updates
 
-### Localization
+FoxMes checks for a new version once an hour and shows an **Update FoxMes** bar at the bottom of the chat list when one is released. It downloads the APK from GitHub Releases, verifies its SHA-256, package name and signing certificate, and then opens the Android installer. The installation itself is always confirmed by you in the system dialog; the first time, Android asks to allow FoxMes to install apps.
 
-We moved all translations to https://translations.telegram.org/en/android/. Please use it.
+## Building from source
+
+You will need Android Studio, JDK 17 or 21, Android SDK 36 and Android NDK 27.2.12479018.
+
+```bash
+git clone --recursive --shallow-submodules https://github.com/krol44/FoxMesAndroid.git
+cd FoxMesAndroid
+```
+
+If the `--recursive` flag was forgotten, run `git submodule update --init --recursive --depth=1`.
+
+Build a debug APK, install it on a device or emulator and launch it with the logs captured:
+
+```bash
+./dev-client.sh              # against the local FoxMes services
+./prod-client.sh             # against production
+./dev-client.sh --help       # all options
+```
+
+A release APK is built by `foxmes/build-android.sh`, either directly or in Docker:
+
+```bash
+docker build -t foxmes-android .
+docker run --rm -v "$PWD":/home/source foxmes-android
+```
+
+The packages land in `artifacts/android`. Without `FOXMES_KEYSTORE_FILE` the APK is signed with the public dummy key from `TMessagesProj/config` — fine for a local check, never for publishing. Releases are built and published by the GitHub workflow, see `.github/workflows/foxmes-release.yml`.
+
+## License
+
+The source code is licensed under GNU GPL v2 or later. See [LICENSE](LICENSE) and [LEGAL](LEGAL). Telegram for Android copyright, license notices, and required upstream attribution are retained.

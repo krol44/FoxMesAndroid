@@ -36,6 +36,8 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.SaveToGallerySettingsHelper;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.StatsController;
+import org.telegram.messenger.foxmes.FoxMesCallSettings;
+import org.telegram.messenger.foxmes.FoxMesFeatureGate;
 import org.telegram.messenger.voip.Instance;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBar;
@@ -95,6 +97,8 @@ public class DataSettingsActivity extends BaseFragment {
     private int callsSectionRow;
     @Keep
     private int useLessDataForCallsRow;
+    private int foxMesP2pRow = -1;
+    private boolean foxMesP2p;
     private int quickRepliesRow = -1;
     private int callsSection2Row;
     private int proxySectionRow;
@@ -127,8 +131,18 @@ public class DataSettingsActivity extends BaseFragment {
 
         DownloadController.getInstance(currentAccount).loadAutoDownloadConfig(true);
         updateRows(true);
+        if (foxMesP2pRow >= 0) {
+            FoxMesCallSettings.loadAllowsP2P(currentAccount, this::setFoxMesP2p);
+        }
 
         return true;
+    }
+
+    private void setFoxMesP2p(boolean value) {
+        foxMesP2p = value;
+        if (listAdapter != null && foxMesP2pRow >= 0) {
+            listAdapter.notifyItemChanged(foxMesP2pRow);
+        }
     }
 
     private void updateRows(boolean fullNotify) {
@@ -192,13 +206,22 @@ public class DataSettingsActivity extends BaseFragment {
         enableCacheStreamRow = -1;//rowCount++;
         callsSectionRow = rowCount++;
         useLessDataForCallsRow = rowCount++;
+        foxMesP2pRow = FoxMesFeatureGate.enabled && !FoxMesFeatureGate.hidesCalls() ? rowCount++ : -1;
 //        quickRepliesRow = rowCount++;
         callsSection2Row = rowCount++;
-        proxySectionRow = rowCount++;
-        proxyRow = rowCount++;
-        proxySection2Row = rowCount++;
-        clearDraftsRow = rowCount++;
-        clearDraftsSectionRow = rowCount++;
+        if (!FoxMesFeatureGate.hidesProxy()) {
+            proxySectionRow = rowCount++;
+            proxyRow = rowCount++;
+            proxySection2Row = rowCount++;
+        } else {
+            proxySectionRow = proxyRow = proxySection2Row = -1;
+        }
+        if (!FoxMesFeatureGate.hidesClearCloudDrafts()) {
+            clearDraftsRow = rowCount++;
+            clearDraftsSectionRow = rowCount++;
+        } else {
+            clearDraftsRow = clearDraftsSectionRow = -1;
+        }
 
         if (listAdapter != null && fullNotify) {
             listAdapter.notifyDataSetChanged();
@@ -548,6 +571,9 @@ public class DataSettingsActivity extends BaseFragment {
                 }
                 builder.setNegativeButton(LocaleController.getString(R.string.Cancel), null);
                 showDialog(builder.create());
+            } else if (position == foxMesP2pRow) {
+                setFoxMesP2p(!foxMesP2p);
+                FoxMesCallSettings.setAllowsP2P(currentAccount, foxMesP2p, this::setFoxMesP2p);
             } else if (position == proxyRow) {
                 presentFragment(new ProxyListActivity());
             } else if (position == enableStreamRow) {
@@ -762,6 +788,8 @@ public class DataSettingsActivity extends BaseFragment {
                         checkCell.setTextAndCheck(LocaleController.getString(R.string.AutoplayGIF), SharedConfig.isAutoplayGifs(), true);
                     } else if (position == autoplayVideoRow) {
                         checkCell.setTextAndCheck(LocaleController.getString(R.string.AutoplayVideo), SharedConfig.isAutoplayVideo(), false);
+                    } else if (position == foxMesP2pRow) {
+                        checkCell.setTextAndCheck(LocaleController.getString(R.string.PrivacyP2P), foxMesP2p, false);
                     }
                     break;
                 }
@@ -884,7 +912,7 @@ public class DataSettingsActivity extends BaseFragment {
 
         public boolean isRowEnabled(int position) {
             return position == mobileRow || position == roamingRow || position == wifiRow || position == storageUsageRow || position == useLessDataForCallsRow || position == dataUsageRow || position == proxyRow || position == clearDraftsRow ||
-                    position == enableCacheStreamRow || position == enableStreamRow || position == enableAllStreamRow || position == enableMkvRow || position == quickRepliesRow || position == autoplayVideoRow || position == autoplayGifsRow ||
+                    position == enableCacheStreamRow || position == enableStreamRow || position == enableAllStreamRow || position == enableMkvRow || position == quickRepliesRow || position == autoplayVideoRow || position == autoplayGifsRow || position == foxMesP2pRow ||
                     position == storageNumRow || position == saveToGalleryGroupsRow || position == saveToGalleryPeerRow || position == saveToGalleryChannelsRow || position == resetDownloadRow;
         }
 
@@ -930,7 +958,7 @@ public class DataSettingsActivity extends BaseFragment {
                 return 0;
             } else if (position == mediaDownloadSectionRow || position == streamSectionRow || position == callsSectionRow || position == usageSectionRow || position == proxySectionRow || position == autoplayHeaderRow || position == saveToGallerySectionRow) {
                 return 2;
-            } else if (position == enableCacheStreamRow || position == enableStreamRow || position == enableAllStreamRow || position == enableMkvRow || position == autoplayGifsRow || position == autoplayVideoRow) {
+            } else if (position == enableCacheStreamRow || position == enableStreamRow || position == enableAllStreamRow || position == enableMkvRow || position == autoplayGifsRow || position == autoplayVideoRow || position == foxMesP2pRow) {
                 return 3;
             } else if (position == enableAllStreamInfoRow) {
                 return 4;

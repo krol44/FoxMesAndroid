@@ -45,6 +45,7 @@ import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.NotificationsController;
 import org.telegram.messenger.R;
+import org.telegram.messenger.foxmes.FoxMesFeatureGate;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBar;
@@ -173,7 +174,7 @@ public class ProfileNotificationsActivity extends BaseFragment implements Notifi
         } else {
             previewRow = -1;
         }
-        soundRow = rowCount++;
+        soundRow = FoxMesFeatureGate.hidesNotificationSounds() ? -1 : rowCount++;
         vibrateRow = rowCount++;
         if (DialogObject.isChatDialog(dialogId)) {
             smartRow = rowCount++;

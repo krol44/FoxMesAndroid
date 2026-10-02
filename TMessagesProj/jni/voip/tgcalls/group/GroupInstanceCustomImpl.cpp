@@ -1,3 +1,4 @@
+#include "tgcalls/VideoCodecPolicy.h"
 #include "GroupInstanceCustomImpl.h"
 
 #include <memory>
@@ -215,7 +216,6 @@ static std::vector<webrtc::SdpVideoFormat> filterSupportedVideoFormats(std::vect
     std::vector<webrtc::SdpVideoFormat> filteredFormats;
 
     std::vector<std::string> filterCodecNames = {
-        cricket::kVp8CodecName,
         cricket::kVp9CodecName,
         cricket::kH264CodecName
     };
@@ -233,7 +233,9 @@ static std::vector<webrtc::SdpVideoFormat> filterSupportedVideoFormats(std::vect
         } else if (format.name == cricket::kH264CodecName) {
             h264Formats.push_back(format);
         } else {
-            filteredFormats.push_back(format);
+            if (!IsDisabledVideoCodec(format)) {
+                filteredFormats.push_back(format);
+            }
         }
     }
 
@@ -246,7 +248,9 @@ static std::vector<webrtc::SdpVideoFormat> filterSupportedVideoFormats(std::vect
             for (const auto &parameter : format.parameters) {
                 if (parameter.first == "profile-id") {
                     if (parameter.second == "0") {
-                        filteredFormats.push_back(format);
+                        if (!IsDisabledVideoCodec(format)) {
+                filteredFormats.push_back(format);
+            }
                         added = true;
                         break;
                     }
@@ -299,12 +303,11 @@ static std::vector<OutgoingVideoFormat> assignPayloadTypes(std::vector<webrtc::S
     constexpr int kFirstDynamicPayloadType = 100;
     constexpr int kLastDynamicPayloadType = 127;
 
-    int payload_type = kFirstDynamicPayloadType;
+    int payload_type = kFirstDynamicPayloadType + 2;
 
     std::vector<OutgoingVideoFormat> result;
 
     std::vector<std::string> filterCodecNames = {
-        cricket::kVp8CodecName,
         cricket::kVp9CodecName,
         cricket::kH264CodecName,
     };
@@ -1546,8 +1549,8 @@ public:
         peerConnectionFactoryDeps.audio_encoder_factory = webrtc::CreateAudioEncoderFactory<webrtc::AudioEncoderOpus, webrtc::AudioEncoderL16>();
         peerConnectionFactoryDeps.audio_decoder_factory = webrtc::CreateAudioDecoderFactory<webrtc::AudioDecoderOpus, webrtc::AudioDecoderL16>();
 
-        peerConnectionFactoryDeps.video_encoder_factory = PlatformInterface::SharedInstance()->makeVideoEncoderFactory(false, _videoContentType == VideoContentType::Screencast);
-        peerConnectionFactoryDeps.video_decoder_factory = PlatformInterface::SharedInstance()->makeVideoDecoderFactory();
+        peerConnectionFactoryDeps.video_encoder_factory = std::make_unique<EnabledVideoEncoderFactory>(PlatformInterface::SharedInstance()->makeVideoEncoderFactory(false, _videoContentType == VideoContentType::Screencast));
+        peerConnectionFactoryDeps.video_decoder_factory = std::make_unique<EnabledVideoDecoderFactory>(PlatformInterface::SharedInstance()->makeVideoDecoderFactory());
 
 #if USE_RNNOISE
         if (_audioLevelsUpdated && audioProcessor) {
@@ -2357,7 +2360,6 @@ public:
             std::string codecName;
             switch (name) {
             case VideoCodecName::VP8: {
-                codecName = cricket::kVp8CodecName;
                 break;
             }
             case VideoCodecName::VP9: {
@@ -2377,8 +2379,7 @@ public:
             }
         }
         std::vector<std::string> defaultCodecPriorities = {
-            cricket::kVp8CodecName,
-            cricket::kVp9CodecName
+                cricket::kVp9CodecName
         };
 
         bool enableH264 = false;

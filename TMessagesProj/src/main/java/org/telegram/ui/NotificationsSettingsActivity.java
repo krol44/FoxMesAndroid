@@ -48,6 +48,7 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.foxmes.FoxMesFeatureGate;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_account;
@@ -178,9 +179,21 @@ public class NotificationsSettingsActivity extends BaseFragment implements Notif
 
         notificationsSectionRow = rowCount++;
         privateRow = rowCount++;
-        groupRow = rowCount++;
-        channelsRow = rowCount++;
-        storiesRow = rowCount++;
+        if (!FoxMesFeatureGate.hidesGroups()) {
+            groupRow = rowCount++;
+        } else {
+            groupRow = -1;
+        }
+        if (!FoxMesFeatureGate.hidesChannels()) {
+            channelsRow = rowCount++;
+        } else {
+            channelsRow = -1;
+        }
+        if (!FoxMesFeatureGate.hidesStories()) {
+            storiesRow = rowCount++;
+        } else {
+            storiesRow = -1;
+        }
         reactionsRow = rowCount++;
         notificationsSection2Row = rowCount++;
 
@@ -208,7 +221,11 @@ public class NotificationsSettingsActivity extends BaseFragment implements Notif
         callsSection2Row = rowCount++;
 
         eventsSectionRow = rowCount++;
-        contactJoinedRow = rowCount++;
+        if (!FoxMesFeatureGate.hidesContacts()) {
+            contactJoinedRow = rowCount++;
+        } else {
+            contactJoinedRow = -1;
+        }
         pinnedMessageRow = rowCount++;
         otherSection2Row = rowCount++;
 

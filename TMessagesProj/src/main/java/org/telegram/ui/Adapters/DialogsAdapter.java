@@ -46,6 +46,7 @@ import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.support.LongSparseIntArray;
+import org.telegram.messenger.foxmes.FoxMesFeatureGate;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
@@ -1632,7 +1633,7 @@ public class DialogsAdapter extends RecyclerListView.SelectionAdapter implements
             return;
         }
 
-        if (!hasHints && dialogsType == 0 && folderId == 0 && messagesController.isDialogsEndReached(folderId) && !forceUpdatingContacts) {
+        if (!hasHints && dialogsType == 0 && folderId == 0 && messagesController.isDialogsEndReached(folderId) && !forceUpdatingContacts && !FoxMesFeatureGate.hidesContacts()) {
             if (messagesController.getAllFoldersDialogsCount() <= 10 && ContactsController.getInstance(currentAccount).doneLoadingContacts && !ContactsController.getInstance(currentAccount).contacts.isEmpty()) {
                 onlineContacts = new ArrayList<>(ContactsController.getInstance(currentAccount).contacts);
                 long selfId = UserConfig.getInstance(currentAccount).clientUserId;

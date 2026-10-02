@@ -74,6 +74,7 @@ import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.foxmes.FoxMesFeatureGate;
 import org.telegram.messenger.utils.SearchTextWatcher;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBar;
@@ -111,6 +112,7 @@ import org.telegram.ui.Components.blur3.ViewGroupPartRenderer;
 import org.telegram.ui.Components.blur3.capture.IBlur3Capture;
 import org.telegram.ui.Components.blur3.source.BlurredBackgroundSourceRenderNode;
 import org.telegram.ui.Components.inset.WindowAnimatedInsetsProvider;
+import org.telegram.ui.foxmes.FoxMesUi;
 
 import java.util.ArrayList;
 
@@ -674,6 +676,10 @@ public class ContactsActivity extends BaseFragment implements FactorAnimator.Tar
                 if ((!onlyUsers || inviteViaLink != 0) && section == 0) {
                     if (needPhonebook) {
                         if (row == 0) {
+                            if (FoxMesFeatureGate.enabled) {
+                                FoxMesUi.shareProfileLink(getParentActivity(), currentAccount);
+                                return;
+                            }
                             if (MessagesController.getInstance(currentAccount).isFrozen()) {
                                 AccountFrozenAlert.show(currentAccount);
                                 return;
@@ -933,7 +939,7 @@ public class ContactsActivity extends BaseFragment implements FactorAnimator.Tar
             }
         });
 
-        if (!createSecretChat && !returnAsResult) {
+        if (!createSecretChat && !returnAsResult && !FoxMesFeatureGate.hidesContacts()) {
             floatingButton = new FragmentFloatingButton(context, resourceProvider);
             contentView.addView(floatingButton, FragmentFloatingButton.createDefaultLayoutParams());
             floatingButton.setOnClickListener(v -> {

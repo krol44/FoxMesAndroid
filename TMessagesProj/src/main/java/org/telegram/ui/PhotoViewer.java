@@ -193,6 +193,7 @@ import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.VideoEditedInfo;
 import org.telegram.messenger.WebFile;
+import org.telegram.messenger.foxmes.FoxMesFeatureGate;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.messenger.camera.Size;
 import org.telegram.messenger.chromecast.ChromecastController;
@@ -5905,7 +5906,9 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         allMediaItem.setColors(0xfffafafa, 0xfffafafa);
         menuItem.addSubItem(gallery_menu_savegif, R.drawable.msg_gif, getString(R.string.SaveToGIFs)).setColors(0xfffafafa, 0xfffafafa);
         menuItem.addSubItem(gallery_menu_showinchat, R.drawable.msg_message, getString(R.string.ShowInChat)).setColors(0xfffafafa, 0xfffafafa);
-        menuItem.addSubItem(gallery_menu_create_sticker, R.drawable.msg_sticker, getString(R.string.CreateSticker)).setColors(0xfffafafa, 0xfffafafa);
+        if (!FoxMesFeatureGate.hidesStickerCreation()) {
+            menuItem.addSubItem(gallery_menu_create_sticker, R.drawable.msg_sticker, getString(R.string.CreateSticker)).setColors(0xfffafafa, 0xfffafafa);
+        }
         menuItem.addSubItem(gallery_menu_reply, R.drawable.menu_reply, getString(R.string.Reply)).setColors(0xfffafafa, 0xfffafafa);
         menuItem.addSubItem(gallery_menu_report, R.drawable.msg_report, getString(R.string.ReportProfilePhoto)).setColors(0xfffafafa, 0xfffafafa);
         menuItem.addSubItem(gallery_menu_share, R.drawable.msg_shareout, getString(R.string.ShareFile)).setColors(0xfffafafa, 0xfffafafa);

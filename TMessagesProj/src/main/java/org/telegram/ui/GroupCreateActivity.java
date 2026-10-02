@@ -56,6 +56,7 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.foxmes.FoxMesFeatureGate;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBar;
@@ -1318,7 +1319,7 @@ public class GroupCreateActivity extends BaseFragment implements NotificationCen
                 return count;
             } else {
                 count = 0;
-                if (isCall) {
+                if (isCall && !FoxMesFeatureGate.hidesConferenceCallLinks()) {
                     createCallLinkRow = count++;
                 }
                 if (allowPremium) {

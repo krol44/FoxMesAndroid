@@ -62,6 +62,7 @@ public:
     virtual void start() override;
     virtual void stop() override;
 
+    virtual bool restartIce() override;
     virtual PeerIceParameters getLocalIceParameters() override;
     virtual std::unique_ptr<rtc::SSLFingerprint> getLocalFingerprint() override;
     virtual void setRemoteParams(PeerIceParameters const &remoteIceParameters, rtc::SSLFingerprint *fingerprint, std::string const &sslSetup) override;

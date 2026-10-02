@@ -28,12 +28,7 @@
 
 using namespace tgcalls;
 
-const auto RegisterTag = Register<InstanceImpl>();
 const auto RegisterTagV2_4_0_1 = Register<InstanceV2Impl>();
-const auto RegisterTagV2_4_1_2 = Register<InstanceV2ReferenceImpl>();
-#if defined(__aarch64__)
-const auto RegisterTagV2_Pump = Register<InstanceV2PumpImpl>();
-#endif
 
 jclass TrafficStatsClass;
 jclass FingerprintClass;

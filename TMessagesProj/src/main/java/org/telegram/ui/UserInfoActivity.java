@@ -39,6 +39,7 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.foxmes.FoxMesFeatureGate;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
@@ -65,6 +66,7 @@ import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalAdapter;
 import org.telegram.ui.Components.UniversalFragment;
 import org.telegram.ui.Components.UniversalRecyclerView;
+import org.telegram.ui.foxmes.FoxMesLoginActivity;
 
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -485,6 +487,10 @@ public class UserInfoActivity extends UniversalFragment implements NotificationC
                 freeAccounts -= (UserConfig.MAX_ACCOUNT_COUNT - UserConfig.MAX_ACCOUNT_DEFAULT_COUNT);
             }
             if (freeAccounts > 0 && availableAccount != null) {
+                if (FoxMesFeatureGate.enabled) {
+                    presentFragment(new FoxMesLoginActivity(availableAccount));
+                    return;
+                }
                 presentFragment(new LoginActivity(availableAccount));
             } else if (!UserConfig.hasPremiumOnAccounts()) {
                 showDialog(new LimitReachedBottomSheet(this, getContext(), TYPE_ACCOUNTS, currentAccount, null));

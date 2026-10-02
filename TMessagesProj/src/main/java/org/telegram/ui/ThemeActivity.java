@@ -63,6 +63,7 @@ import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.foxmes.FoxMesFeatureGate;
 import org.telegram.messenger.time.SunDate;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_account;
@@ -671,9 +672,11 @@ public class ThemeActivity extends BaseFragment implements NotificationCenter.No
             chatListRow = rowCount++;
             chatListInfoRow = rowCount++;
 
-            appIconHeaderRow = rowCount++;
-            appIconSelectorRow = rowCount++;
-            appIconShadowRow = rowCount++;
+            if (!FoxMesFeatureGate.hidesAlternateAppIcons()) {
+                appIconHeaderRow = rowCount++;
+                appIconSelectorRow = rowCount++;
+                appIconShadowRow = rowCount++;
+            }
 
             swipeGestureHeaderRow = rowCount++;
             swipeGestureRow = rowCount++;

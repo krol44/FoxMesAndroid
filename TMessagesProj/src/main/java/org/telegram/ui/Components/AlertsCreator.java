@@ -103,6 +103,7 @@ import org.telegram.messenger.SvgHelper;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.foxmes.FoxMesFeatureGate;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.messenger.pip.utils.PipPermissions;
 import org.telegram.messenger.pip.utils.PipUtils;
@@ -2713,7 +2714,7 @@ public class AlertsCreator {
                 deleteForAll[0] = !deleteForAll[0];
                 cell1.setChecked(deleteForAll[0], true);
             });
-        } else if (!second && (secret && !clear || canDeleteInbox) && !UserObject.isDeleted(user) && !lastMessageIsJoined || (deleteChatForAll = checkDeleteForAll && !clear && chat != null && chat.creator)) {
+        } else if (!FoxMesFeatureGate.hidesLocalMessageDeletion() && (!second && (secret && !clear || canDeleteInbox) && !UserObject.isDeleted(user) && !lastMessageIsJoined || (deleteChatForAll = checkDeleteForAll && !clear && chat != null && chat.creator))) {
             cell[0] = new CheckBoxCell(context, 1, resourcesProvider);
             cell[0].setBackground(Theme.getSelectorDrawable(false));
             final boolean deleteChatForAllFinal = deleteChatForAll;
@@ -8096,7 +8097,7 @@ public class AlertsCreator {
                     }
                 }
             }
-            if (myMessagesCount > 0 && hasNonDiceMessages && (user == null || !UserObject.isDeleted(user))) {
+            if (myMessagesCount > 0 && hasNonDiceMessages && (user == null || !UserObject.isDeleted(user)) && !FoxMesFeatureGate.hidesLocalMessageDeletion()) {
                 hasDeleteForAllCheck = true;
                 FrameLayout frameLayout = new FrameLayout(activity);
                 CheckBoxCell cell = new CheckBoxCell(activity, 1, resourcesProvider);

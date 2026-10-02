@@ -129,6 +129,7 @@ import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.XiaomiUtilities;
+import org.telegram.messenger.foxmes.FoxMesFeatureGate;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.messenger.utils.FBool;
 import org.telegram.messenger.utils.GradientProtectionDrawable;
@@ -3027,7 +3028,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                 showSelectStatusDialog();
             });
             SelectAnimatedEmojiDialog.preload(currentAccount);
-        } else if (user != null && MessagesController.getInstance(currentAccount).isPremiumUser(user)) {
+        } else if (user != null && MessagesController.getInstance(currentAccount).isPremiumUser(user) && !FoxMesFeatureGate.hidesPremiumBadge()) {
             if (premiumStar == null) {
                 premiumStar = getContext().getResources().getDrawable(R.drawable.msg_premium_liststar).mutate();
                 premiumStar = new AnimatedEmojiDrawable.WrapSizeDrawable(premiumStar, dp(18), dp(18)) {
@@ -8849,7 +8850,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             floatingButton3.setButtonVisible(isVisible, animated);
         }
         if (floatingButtonStories != null) {
-            floatingButtonStories.setButtonVisible(isVisible, animated);
+            floatingButtonStories.setButtonVisible(isVisible && !FoxMesFeatureGate.hidesStories(), animated);
         }
     }
 
@@ -13498,6 +13499,9 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     private void openWriteContacts() {
         Bundle args = new Bundle();
         args.putBoolean("destroyAfterSelect", true);
+        if (FoxMesFeatureGate.hidesGroups()) {
+            args.putBoolean("onlyUsers", true);
+        }
         presentFragment(new ContactsActivity(args));
     }
 
@@ -13718,10 +13722,12 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             });
         });
         io.addGap();
-        io.add(R.drawable.outline_groups_24, getString(R.string.NewGroup), () -> {
-            Bundle args = new Bundle();
-            presentFragment(new GroupCreateActivity(args));
-        });
+        if (!FoxMesFeatureGate.hidesGroups()) {
+            io.add(R.drawable.outline_groups_24, getString(R.string.NewGroup), () -> {
+                Bundle args = new Bundle();
+                presentFragment(new GroupCreateActivity(args));
+            });
+        }
         io.add(R.drawable.outline_saved_24, getString(R.string.SavedMessages), () -> {
             Bundle args = new Bundle();
             args.putLong("user_id", UserConfig.getInstance(currentAccount).getClientUserId());

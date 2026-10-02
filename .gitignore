@@ -14,3 +14,19 @@ TMessagesProj_AppHockeyApp/afat/
 TMessagesProj_AppStandalone/afat/
 TMessagesProj_AppHuawei/afat/
 TMessagesProj/jni/ffmpeg/build_android
+openapi-foxmes.yaml
+FOXMES_BRIDGE_Android.md
+
+# Local configuration files
+settings.local.json
+*.local.json
+.env
+.env.*
+
+# AI / code-index work folders (session-specific, not for version control)
+.claude/
+.gitnexus/
+
+# Release: local checklist and the packages foxmes/build-android.sh produces
+/RELEASE.md
+/artifacts/

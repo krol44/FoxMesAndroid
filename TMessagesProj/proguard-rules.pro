@@ -46,6 +46,13 @@
 
 -keep class org.telegram.tgnet.** { *; }
 
+-keep class org.telegram.messenger.foxmes.** { *; }
+-keep class org.telegram.ui.foxmes.** { *; }
+-dontwarn okhttp3.internal.platform.**
+-dontwarn org.conscrypt.**
+-dontwarn org.bouncycastle.**
+-dontwarn org.openjsse.**
+
 # JLatexMath: macro/atom classes are loaded reflectively by Class.forName
 -keep class org.scilab.forge.jlatexmath.** { *; }
 -keep class ru.noties.jlatexmath.** { *; }

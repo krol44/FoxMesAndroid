@@ -18,6 +18,8 @@ import com.google.firebase.messaging.FirebaseMessaging;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
+import org.telegram.messenger.foxmes.FoxMesFeatureGate;
+import org.telegram.messenger.foxmes.FoxMesPush;
 import org.telegram.messenger.voip.VoIPGroupNotification;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.NativeByteBuffer;
@@ -94,6 +96,10 @@ public class PushListenerController {
     }
 
     public static void processRemoteMessage(@PushType int pushType, String data, long time) {
+        if (FoxMesFeatureGate.enabled) {
+            FoxMesPush.processRemoteMessage(data);
+            return;
+        }
         String tag = pushType == PUSH_TYPE_FIREBASE ? "FCM" : "HCM";
         if (BuildVars.LOGS_ENABLED) {
             FileLog.d(tag + " PRE START PROCESSING");

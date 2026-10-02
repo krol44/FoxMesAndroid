@@ -136,6 +136,7 @@ import org.telegram.messenger.TopicsController;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.foxmes.FoxMesFeatureGate;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.messenger.pip.PipActivityController;
 import org.telegram.messenger.pip.activity.IPipActivity;
@@ -235,6 +236,7 @@ import org.telegram.ui.TON.TONIntroActivity;
 import org.telegram.ui.bots.BotWebViewAttachedSheet;
 import org.telegram.ui.bots.BotWebViewSheet;
 import org.telegram.ui.bots.WebViewRequestProps;
+import org.telegram.ui.foxmes.FoxMesLoginActivity;
 import org.webrtc.voiceengine.WebRtcAudioTrack;
 
 import java.io.BufferedReader;
@@ -1086,6 +1088,9 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     }
 
     private BaseFragment getClientNotActivatedFragment() {
+        if (FoxMesFeatureGate.enabled) {
+            return new FoxMesLoginActivity();
+        }
         if (LoginActivity.loadCurrentState(false, currentAccount).getInt("currentViewNum", 0) != 0) {
             return new LoginActivity();
         }
@@ -1257,6 +1262,10 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             if (AndroidUtilities.isTablet()) {
                 layersActionBarLayout.rebuildLogout();
                 rightActionBarLayout.rebuildLogout();
+            }
+            if (FoxMesFeatureGate.enabled) {
+                presentFragment(new FoxMesLoginActivity());
+                return;
             }
             presentFragment(new IntroActivity().setOnLogout());
         }
@@ -5956,7 +5965,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
     private boolean firstAppUpdateCheck = true;
     public void checkAppUpdate(boolean force, Browser.Progress progress) {
-        if (!ApplicationLoader.isStandaloneBuild() && !ApplicationLoader.isBetaBuild()) {
+        if (!ApplicationLoader.isStandaloneBuild() && !ApplicationLoader.isBetaBuild() && !ApplicationLoader.applicationLoaderInstance.isCustomUpdate()) {
             return;
         }
         if (!force && !BuildVars.CHECK_UPDATES) {
@@ -8218,7 +8227,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             title = "Connecting";
             titleId = R.string.Connecting;
         }
-        if (currentConnectionState == ConnectionsManager.ConnectionStateConnecting || currentConnectionState == ConnectionsManager.ConnectionStateConnectingToProxy) {
+        if ((currentConnectionState == ConnectionsManager.ConnectionStateConnecting || currentConnectionState == ConnectionsManager.ConnectionStateConnectingToProxy) && !FoxMesFeatureGate.hidesProxy()) {
             action = () -> {
                 BaseFragment lastFragment = null;
                 if (AndroidUtilities.isTablet()) {

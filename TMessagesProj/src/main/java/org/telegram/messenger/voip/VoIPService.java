@@ -102,6 +102,8 @@ import org.telegram.messenger.ContactsController;
 import org.telegram.messenger.DialogObject;
 import org.telegram.messenger.FileLoader;
 import org.telegram.messenger.FileLog;
+import org.telegram.messenger.foxmes.FoxMesFeatureGate;
+import org.telegram.messenger.foxmes.FoxMesRuntime;
 import org.telegram.messenger.ImageLoader;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MediaController;
@@ -328,6 +330,7 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 	}
 
 	private long callStartTime;
+	private Runnable callHeartbeatRunnable;
 	private boolean playingSound;
 	private boolean isOutgoing;
 	public boolean videoCall;
@@ -3452,7 +3455,7 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 			// encryption key
 			final Instance.EncryptionKey encryptionKey = new Instance.EncryptionKey(authKey, isOutgoing);
 
-			boolean newAvailable = "2.7.7".compareTo(privateCall.protocol.library_versions.get(0)) <= 0;
+			boolean newAvailable = "13.0.0".equals(privateCall.protocol.library_versions.get(0));
 			if (captureDevice[CAPTURE_DEVICE_CAMERA] != 0 && !newAvailable) {
 				NativeInstance.destroyVideoCapturer(captureDevice[CAPTURE_DEVICE_CAMERA]);
 				captureDevice[CAPTURE_DEVICE_CAMERA] = 0;
@@ -4126,6 +4129,7 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 
 	@Override
 	public void onDestroy() {
+		stopCallHeartbeat();
 		if (BuildVars.LOGS_ENABLED) {
 			FileLog.d("=============== VoIPService STOPPING ===============");
 		}
@@ -5409,18 +5413,53 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 		}
 	}
 
+	private void startCallHeartbeat() {
+		if (!FoxMesFeatureGate.enabled || !FoxMesFeatureGate.calls || privateCall == null || groupCall != null || callHeartbeatRunnable != null) {
+			return;
+		}
+		final long callId = privateCall.id;
+		final FoxMesRuntime runtime = FoxMesRuntime.getInstance(currentAccount);
+		callHeartbeatRunnable = new Runnable() {
+			@Override
+			public void run() {
+				if (isCallEnded || privateCall == null || privateCall.id != callId) {
+					stopCallHeartbeat();
+					return;
+				}
+				runtime.io.execute(() -> {
+					try {
+						runtime.api.heartbeatCall(callId);
+					} catch (IOException error) {
+						FileLog.e("FoxMes call heartbeat failed for " + callId, error);
+					}
+				});
+				AndroidUtilities.runOnUIThread(this, 30000);
+			}
+		};
+		AndroidUtilities.runOnUIThread(callHeartbeatRunnable, 30000);
+	}
+
+	private void stopCallHeartbeat() {
+		if (callHeartbeatRunnable != null) {
+			AndroidUtilities.cancelRunOnUIThread(callHeartbeatRunnable);
+			callHeartbeatRunnable = null;
+		}
+	}
+
 	public void onConnectionStateChanged(int newState, boolean inTransition) {
 		AndroidUtilities.runOnUIThread(() -> {
 			if (convertingVoip != null) {
 				return;
 			}
 			if (newState == STATE_ESTABLISHED) {
+				startCallHeartbeat();
 				if (callStartTime == 0) {
 					callStartTime = SystemClock.elapsedRealtime();
 				}
 				//peerCapabilities = tgVoip.getPeerCapabilities();
 			}
 			if (newState == STATE_FAILED) {
+				stopCallHeartbeat();
 				callFailed();
 				return;
 			}
@@ -5506,6 +5545,7 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 			FileLog.d("Call " + getCallID() + " ended");
 		}
 		isCallEnded = true;
+		stopCallHeartbeat();
 		if (groupCall != null && (!playedConnectedSound || onDestroyRunnable != null)) {
 			needPlayEndSound = false;
 		}
