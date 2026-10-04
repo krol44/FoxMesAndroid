@@ -4,13 +4,13 @@ FoxMes Android is built on the Telegram for Android core.
 
 ## Installing the APK
 
-FoxMes Android 1.0.5 is distributed through [GitHub Releases](https://github.com/krol44/FoxMesAndroid/releases) rather than Google Play. Before installing, verify the downloaded file against `SHA256SUMS` from the same GitHub release:
+FoxMes Android 1.0.6 is distributed through [GitHub Releases](https://github.com/krol44/FoxMesAndroid/releases) rather than Google Play. Before installing, verify the downloaded file against `SHA256SUMS` from the same GitHub release:
 
 ```bash
 sha256sum --check --ignore-missing SHA256SUMS
 ```
 
-Then open `FoxMes-1.0.5-android.apk` on the phone. Android asks once to allow installing apps from the browser or file manager you opened it with: select **Settings → Allow from this source** and go back to finish the installation.
+Then open `FoxMes-1.0.6-android.apk` on the phone. Android asks once to allow installing apps from the browser or file manager you opened it with: select **Settings → Allow from this source** and go back to finish the installation.
 
 Every release is signed with the same FoxMes key, so a newer APK installs over the old one and keeps your data. The SHA-256 fingerprint of the signing certificate is:
 
@@ -21,7 +21,7 @@ Every release is signed with the same FoxMes key, so a newer APK installs over t
 Check it with `apksigner`, which prints the same digest in lower case without colons:
 
 ```bash
-apksigner verify --print-certs FoxMes-1.0.5-android.apk
+apksigner verify --print-certs FoxMes-1.0.6-android.apk
 ```
 
 If Android reports that the package conflicts with an existing one, a build signed with a different key is installed — uninstall it first.

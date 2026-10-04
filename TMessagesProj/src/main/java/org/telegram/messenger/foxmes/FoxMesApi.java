@@ -449,7 +449,7 @@ public final class FoxMesApi {
                     .addFormDataPart("file", name, part)
                     .build();
             final long overhead = Math.max(0, body.contentLength() - size);
-            String text = http.upload("POST", "/chat/upload/" + type, chatQuery, body, null, new String[1], 300, sent -> {
+            String text = http.upload("POST", "/upload/" + type, chatQuery, body, null, new String[1], 300, sent -> {
                 if (progress != null) {
                     progress.onProgress(Math.min(size, Math.max(0, sent - overhead)), size);
                 }
@@ -485,7 +485,7 @@ public final class FoxMesApi {
     private Uploaded uploadChunkSession(File file, long size, String name, String mime, String type, Map<String, String> chatQuery, UploadProgress progress) throws IOException {
         final long chunkSize = Math.min(Math.max(4L * 1024 * 1024, (size + 1023) / 1024), 32L * 1024 * 1024);
         final int totalChunks = (int) Math.max(1, (size + chunkSize - 1) / chunkSize);
-        final String path = "/chat/uploadChunk/" + type;
+        final String path = "/uploadChunk/" + type;
         final String[] lane = new String[1];
 
         Map<String, String> initQuery = new HashMap<>(chatQuery);

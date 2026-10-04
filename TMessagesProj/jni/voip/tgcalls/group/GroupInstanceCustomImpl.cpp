@@ -75,6 +75,7 @@
 #include "third-party/json11.hpp"
 
 #include "common_video/h264/h264_common.h"
+#include "api/video_codecs/h264_profile_level_id.h"
 #include "common_video/h264/h264_bitstream_parser.h"
 
 namespace tgcalls {
@@ -212,87 +213,34 @@ static int getH264LevelAssymetryAllowedPriority(std::string const &levelAssymetr
     }
 }
 
+// These profiles and payload ids are shared by every FoxMes group receiver.
+// A device's extra profiles must not shift another device's RTP numbering.
 static std::vector<webrtc::SdpVideoFormat> filterSupportedVideoFormats(std::vector<webrtc::SdpVideoFormat> const &formats) {
-    std::vector<webrtc::SdpVideoFormat> filteredFormats;
-
-    std::vector<std::string> filterCodecNames = {
-        cricket::kVp9CodecName,
-        cricket::kH264CodecName
-    };
-
-    std::vector<webrtc::SdpVideoFormat> vp9Formats;
-    std::vector<webrtc::SdpVideoFormat> h264Formats;
-
-    for (const auto &format : formats) {
-        if (std::find(filterCodecNames.begin(), filterCodecNames.end(), format.name) == filterCodecNames.end()) {
-            continue;
-        }
-
-        if (format.name == cricket::kVp9CodecName) {
-            vp9Formats.push_back(format);
-        } else if (format.name == cricket::kH264CodecName) {
-            h264Formats.push_back(format);
-        } else {
-            if (!IsDisabledVideoCodec(format)) {
-                filteredFormats.push_back(format);
+    std::vector<webrtc::SdpVideoFormat> result;
+    for (const auto &name : {cricket::kVp9CodecName, cricket::kH264CodecName}) {
+        for (const auto &format : formats) {
+            if (format.name != name || IsDisabledVideoCodec(format)) continue;
+            if (name == cricket::kVp9CodecName) {
+                const auto profile = format.parameters.find("profile-id");
+                if (profile != format.parameters.end() && profile->second != "0") continue;
+            } else {
+                const auto params = parseH264FormatParameters(format);
+                const auto profile = webrtc::ParseSdpForH264ProfileLevelId(format.parameters);
+                if (!profile || profile->profile != webrtc::H264Profile::kProfileConstrainedBaseline
+                    || params.packetizationMode != "1") continue;
             }
-        }
-    }
-
-    if (!vp9Formats.empty()) {
-        bool added = false;
-        for (const auto &format : vp9Formats) {
-            if (added) {
-                break;
+            auto canonical = format;
+            if (name == cricket::kH264CodecName) {
+                canonical.parameters["profile-level-id"] = cricket::kH264ProfileLevelConstrainedBaseline;
+                canonical.parameters["level-asymmetry-allowed"] = "1";
+            } else {
+                canonical.parameters["profile-id"] = "0";
             }
-            for (const auto &parameter : format.parameters) {
-                if (parameter.first == "profile-id") {
-                    if (parameter.second == "0") {
-                        if (!IsDisabledVideoCodec(format)) {
-                filteredFormats.push_back(format);
-            }
-                        added = true;
-                        break;
-                    }
-                }
-            }
-        }
-
-        if (!added) {
-            filteredFormats.push_back(vp9Formats[0]);
+            result.push_back(std::move(canonical));
+            break;
         }
     }
-
-    if (!h264Formats.empty()) {
-        std::sort(h264Formats.begin(), h264Formats.end(), [](const webrtc::SdpVideoFormat &lhs, const webrtc::SdpVideoFormat &rhs) {
-            auto lhsParameters = parseH264FormatParameters(lhs);
-            auto rhsParameters = parseH264FormatParameters(rhs);
-
-            int lhsLevelIdPriority = getH264ProfileLevelIdPriority(lhsParameters.profileLevelId);
-            int lhsPacketizationModePriority = getH264PacketizationModePriority(lhsParameters.packetizationMode);
-            int lhsLevelAssymetryAllowedPriority = getH264LevelAssymetryAllowedPriority(lhsParameters.levelAssymetryAllowed);
-
-            int rhsLevelIdPriority = getH264ProfileLevelIdPriority(rhsParameters.profileLevelId);
-            int rhsPacketizationModePriority = getH264PacketizationModePriority(rhsParameters.packetizationMode);
-            int rhsLevelAssymetryAllowedPriority = getH264LevelAssymetryAllowedPriority(rhsParameters.levelAssymetryAllowed);
-
-            if (lhsLevelIdPriority != rhsLevelIdPriority) {
-                return lhsLevelIdPriority < rhsLevelIdPriority;
-            }
-            if (lhsPacketizationModePriority != rhsPacketizationModePriority) {
-                return lhsPacketizationModePriority < rhsPacketizationModePriority;
-            }
-            if (lhsLevelAssymetryAllowedPriority != rhsLevelAssymetryAllowedPriority) {
-                return lhsLevelAssymetryAllowedPriority < rhsLevelAssymetryAllowedPriority;
-            }
-
-            return false;
-        });
-
-        filteredFormats.push_back(h264Formats[0]);
-    }
-
-    return filteredFormats;
+    return result;
 }
 
 static std::vector<OutgoingVideoFormat> assignPayloadTypes(std::vector<webrtc::SdpVideoFormat> const &formats) {
@@ -313,6 +261,7 @@ static std::vector<OutgoingVideoFormat> assignPayloadTypes(std::vector<webrtc::S
     };
 
     for (const auto &codecName : filterCodecNames) {
+        payload_type = codecName == cricket::kVp9CodecName ? 102 : 104;
         for (const auto &format : formats) {
             if (format.name != codecName) {
                 continue;
@@ -983,7 +932,7 @@ public:
             outgoingVideoDescription->set_rtcp_reduced_size(true);
             outgoingVideoDescription->set_direction(webrtc::RtpTransceiverDirection::kRecvOnly);
             outgoingVideoDescription->set_codecs(codecs);
-            outgoingVideoDescription->set_bandwidth(1300000);
+            outgoingVideoDescription->set_bandwidth(15000000);
 
             cricket::StreamParams videoRecvStreamParams;
 
@@ -1024,7 +973,7 @@ public:
             incomingVideoDescription->set_rtcp_reduced_size(true);
             incomingVideoDescription->set_direction(webrtc::RtpTransceiverDirection::kSendOnly);
             incomingVideoDescription->set_codecs(codecs);
-            incomingVideoDescription->set_bandwidth(1300000);
+            incomingVideoDescription->set_bandwidth(15000000);
 
             incomingVideoDescription->AddStream(videoRecvStreamParams);
 
@@ -1549,7 +1498,7 @@ public:
         peerConnectionFactoryDeps.audio_encoder_factory = webrtc::CreateAudioEncoderFactory<webrtc::AudioEncoderOpus, webrtc::AudioEncoderL16>();
         peerConnectionFactoryDeps.audio_decoder_factory = webrtc::CreateAudioDecoderFactory<webrtc::AudioDecoderOpus, webrtc::AudioDecoderL16>();
 
-        peerConnectionFactoryDeps.video_encoder_factory = std::make_unique<EnabledVideoEncoderFactory>(PlatformInterface::SharedInstance()->makeVideoEncoderFactory(false, _videoContentType == VideoContentType::Screencast));
+        peerConnectionFactoryDeps.video_encoder_factory = std::make_unique<EnabledVideoEncoderFactory>(PlatformInterface::SharedInstance()->makeVideoEncoderFactory(_videoContentType == VideoContentType::Screencast, _videoContentType == VideoContentType::Screencast));
         peerConnectionFactoryDeps.video_decoder_factory = std::make_unique<EnabledVideoDecoderFactory>(PlatformInterface::SharedInstance()->makeVideoDecoderFactory());
 
 #if USE_RNNOISE
@@ -1566,9 +1515,10 @@ public:
         peerConnectionFactoryDeps.adm = _audioDeviceModule;
 
         _availableVideoFormats = filterSupportedVideoFormats(peerConnectionFactoryDeps.video_encoder_factory->GetSupportedFormats());
+        _availableVideoReceiveFormats = filterSupportedVideoFormats(peerConnectionFactoryDeps.video_decoder_factory->GetSupportedFormats());
 
         _payloadTypeMapping.insert(std::make_pair(111, FrameTransformerPayloadType::Opus));
-        auto tempVideoPayloadTypes = assignPayloadTypes(_availableVideoFormats);
+        auto tempVideoPayloadTypes = assignPayloadTypes(_availableVideoReceiveFormats);
         for (const auto &it : tempVideoPayloadTypes) {
             if (it.videoCodec.name == cricket::kVp8CodecName) {
                 _payloadTypeMapping.insert(std::make_pair(it.videoCodec.id, FrameTransformerPayloadType::VP8));
@@ -1782,7 +1732,7 @@ public:
             outgoingVideoCodecs.push_back(_selectedPayloadType->rtxCodec.value());
         }
         outgoingVideoDescription->set_codecs(outgoingVideoCodecs);
-        outgoingVideoDescription->set_bandwidth(1300000);
+        outgoingVideoDescription->set_bandwidth(_videoContentType == VideoContentType::Screencast ? 15000000 : 1300000);
         outgoingVideoDescription->AddStream(videoSendStreamParams);
 
         auto incomingVideoDescription = std::make_unique<cricket::VideoContentDescription>();
@@ -1793,7 +1743,7 @@ public:
         incomingVideoDescription->set_rtcp_reduced_size(true);
         incomingVideoDescription->set_direction(webrtc::RtpTransceiverDirection::kRecvOnly);
         incomingVideoDescription->set_codecs(outgoingVideoCodecs);
-        incomingVideoDescription->set_bandwidth(1300000);
+        incomingVideoDescription->set_bandwidth(_videoContentType == VideoContentType::Screencast ? 15000000 : 1300000);
 
         _threads->getWorkerThread()->BlockingCall([&]() {
             std::string errorDesc;
@@ -1819,41 +1769,18 @@ public:
 
         if (_videoContentType == VideoContentType::Screencast) {
             _threads->getWorkerThread()->BlockingCall([this]() {
-                webrtc::RtpParameters rtpParameters = _outgoingVideoChannel->send_channel()->GetRtpSendParameters(_outgoingVideoSsrcs.simulcastLayers[0].ssrc);
-                if (rtpParameters.encodings.size() == 3) {
-                    for (int i = 0; i < (int)rtpParameters.encodings.size(); i++) {
-                        if (i == 0) {
-                            rtpParameters.encodings[i].min_bitrate_bps = 50000;
-                            rtpParameters.encodings[i].max_bitrate_bps = 100000;
-                            rtpParameters.encodings[i].scale_resolution_down_by = 4.0;
-                            rtpParameters.encodings[i].active = _outgoingVideoConstraint >= 180;
-                        } else if (i == 1) {
-                            rtpParameters.encodings[i].min_bitrate_bps = 150000;
-                            rtpParameters.encodings[i].max_bitrate_bps = 200000;
-                            rtpParameters.encodings[i].scale_resolution_down_by = 2.0;
-                            rtpParameters.encodings[i].active = _outgoingVideoConstraint >= 360;
-                        } else if (i == 2) {
-                            rtpParameters.encodings[i].min_bitrate_bps = 300000;
-                            rtpParameters.encodings[i].max_bitrate_bps = 800000 + 100000;
-                            rtpParameters.encodings[i].active = _outgoingVideoConstraint >= 720;
-                        }
-                    }
-                } else if (rtpParameters.encodings.size() == 2) {
-                    for (int i = 0; i < (int)rtpParameters.encodings.size(); i++) {
-                        if (i == 0) {
-                            rtpParameters.encodings[i].min_bitrate_bps = 50000;
-                            rtpParameters.encodings[i].max_bitrate_bps = 100000;
-                            rtpParameters.encodings[i].scale_resolution_down_by = 2.0;
-                        } else if (i == 1) {
-                            rtpParameters.encodings[i].min_bitrate_bps = 200000;
-                            rtpParameters.encodings[i].max_bitrate_bps = 900000 + 100000;
-                        }
-                    }
-                } else {
-                    rtpParameters.encodings[0].max_bitrate_bps = (800000 + 100000) * 2;
+                auto params = _outgoingVideoChannel->send_channel()->GetRtpSendParameters(_outgoingVideoSsrcs.simulcastLayers[0].ssrc);
+                if (params.encodings.empty()) return;
+                auto &encoding = params.encodings.front();
+                encoding.active = _outgoingVideoConstraint > 0;
+                encoding.scale_resolution_down_by = 1.0;
+                encoding.min_bitrate_bps = 300000;
+                encoding.max_bitrate_bps = 15000000;
+                if (_selectedPayloadType && _selectedPayloadType->videoCodec.name == cricket::kVp9CodecName) {
+                    encoding.scalability_mode = "L1T1";
                 }
-
-                _outgoingVideoChannel->send_channel()->SetRtpSendParameters(_outgoingVideoSsrcs.simulcastLayers[0].ssrc, rtpParameters);
+                const auto error = _outgoingVideoChannel->send_channel()->SetRtpSendParameters(_outgoingVideoSsrcs.simulcastLayers[0].ssrc, params);
+                if (!error.ok()) RTC_LOG(LS_WARNING) << "FoxMes: group screen parameters: " << error.message();
             });
         } else {
             _threads->getWorkerThread()->BlockingCall([this]() {
@@ -2404,7 +2331,13 @@ public:
                 break;
             }
             for (const auto &payloadType : _availablePayloadTypes) {
-                if (payloadType.videoCodec.name == codecName) {
+                const auto offered = std::find_if(_sharedVideoInformation->payloadTypes.begin(),
+                    _sharedVideoInformation->payloadTypes.end(), [&](const auto &remote) {
+                        return remote.name == payloadType.videoCodec.name
+                            && remote.id == uint32_t(payloadType.videoCodec.id);
+                    });
+                if (payloadType.videoCodec.name == codecName
+                    && offered != _sharedVideoInformation->payloadTypes.end()) {
                     _selectedPayloadType = payloadType;
                     break;
                 }
@@ -2442,7 +2375,8 @@ public:
                 preferences.start_bitrate_bps = std::max(preferences.min_bitrate_bps, 400 * 1000);
             }
             if (_videoContentType == VideoContentType::Screencast) {
-                preferences.max_bitrate_bps = std::max(preferences.min_bitrate_bps, (1020 + 32) * 1000);
+                preferences.max_bitrate_bps = 15000000;
+                if (resetStartBitrate) preferences.start_bitrate_bps = 6000000;
             } else {
                 preferences.max_bitrate_bps = std::max(preferences.min_bitrate_bps, (1020 + 32) * 1000);
             }
@@ -2968,7 +2902,8 @@ public:
         if (_isConference) {
             numVideoSimulcastLayers = 1;
         } else if (_videoContentType == VideoContentType::Screencast) {
-            numVideoSimulcastLayers = 2;
+            // Present one live full-resolution stream, never an inactive SIM layer.
+            numVideoSimulcastLayers = 1;
         }
         _outgoingVideoSsrcs.simulcastLayers.clear();
         for (int layerIndex = 0; layerIndex < numVideoSimulcastLayers; layerIndex++) {
@@ -3175,7 +3110,7 @@ public:
             _call.get(),
             _rtpTransport,
             _uniqueRandomIdGenerator.get(),
-            _availableVideoFormats,
+            _availableVideoReceiveFormats,
             _sharedVideoInformation.value(),
             123456,
             int64_t(),
@@ -3421,7 +3356,7 @@ public:
             _call.get(),
             _rtpTransport,
             _uniqueRandomIdGenerator.get(),
-            _availableVideoFormats,
+            _availableVideoReceiveFormats,
             _sharedVideoInformation.value(),
             audioSsrc,
             userId,
@@ -3700,6 +3635,7 @@ private:
     uint32_t _outgoingAudioSsrc = 0;
 
     std::vector<webrtc::SdpVideoFormat> _availableVideoFormats;
+    std::vector<webrtc::SdpVideoFormat> _availableVideoReceiveFormats;
     std::vector<OutgoingVideoFormat> _availablePayloadTypes;
     absl::optional<OutgoingVideoFormat> _selectedPayloadType;
 
