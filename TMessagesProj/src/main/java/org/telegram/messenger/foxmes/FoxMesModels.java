@@ -29,6 +29,16 @@ public final class FoxMesModels {
         public String avatarUrl;
         @SerializedName("avatar_id")
         public String avatarId;
+        // Present only on payloads built for this account; null means "not stated".
+        public Boolean blocked;
+        @SerializedName("contact_name")
+        public String contactName;
+        @SerializedName("contact_photo_url")
+        public String contactPhotoUrl;
+        @SerializedName("original_display_name")
+        public String originalDisplayName;
+        @SerializedName("contact_note")
+        public String contactNote;
     }
 
     public static class Me extends User {

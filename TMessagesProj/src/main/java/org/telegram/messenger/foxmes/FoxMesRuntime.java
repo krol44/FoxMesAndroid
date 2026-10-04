@@ -9,6 +9,9 @@ import org.telegram.messenger.AccountInstance;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.MessagesController;
+import org.telegram.tgnet.TLObject;
+import org.telegram.messenger.NotificationCenter;
+import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.foxmes.FoxMesModels.Chat;
@@ -22,6 +25,7 @@ import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_update;
 
+import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -684,9 +688,117 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
 
     public void rememberUser(User user) {
         if (user != null && user.id != 0) {
+            User previous = users.get(user.id);
+            if (user.blocked == null && previous != null) {
+                user.blocked = previous.blocked;
+                user.contactName = previous.contactName;
+                user.contactPhotoUrl = previous.contactPhotoUrl;
+                user.originalDisplayName = previous.originalDisplayName;
+                user.contactNote = previous.contactNote;
+            }
             users.put(user.id, user);
             missingUsers.remove(user.id);
+            if (user.blocked != null && previous != null
+                    && !TextUtils.equals(nonNull(previous.contactNote), nonNull(user.contactNote))) {
+                refreshNote(user.id, user.contactNote);
+            }
         }
+    }
+
+    private static String nonNull(String value) {
+        return value != null ? value : "";
+    }
+
+    // The profile reads the note from the cached full user, which is loaded
+    // once; a note changed here or on another device is written into it.
+    private void refreshNote(long userId, String note) {
+        AndroidUtilities.runOnUIThread(() -> {
+            TLRPC.UserFull full = MessagesController.getInstance(account).getUserFull(userId);
+            if (full == null) {
+                return;
+            }
+            applyNote(full, note);
+            MessagesStorage.getInstance(account).updateUserInfo(full, true);
+            NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.userInfoDidLoad, userId, full);
+        });
+    }
+
+    static void applyNote(TLRPC.UserFull full, String note) {
+        if (TextUtils.isEmpty(note)) {
+            full.note = null;
+            full.flags2 &= ~TLObject.FLAG_22;
+        } else {
+            TLRPC.TL_textWithEntities text = new TLRPC.TL_textWithEntities();
+            text.text = note;
+            full.note = text;
+            full.flags2 |= TLObject.FLAG_22;
+        }
+    }
+
+    // The contact edits below change only this account's view of the person;
+    // the server answers with that view and also sends it as user.updated to
+    // every device of the account, which is what refreshes the upstream user.
+    public boolean hasContactPhoto(long userId) {
+        User user = users.get(userId);
+        return user != null && !TextUtils.isEmpty(user.contactPhotoUrl);
+    }
+
+    public String contactName(long userId) {
+        User user = users.get(userId);
+        return user != null && user.contactName != null ? user.contactName : "";
+    }
+
+    public String originalUserName(long userId) {
+        User user = users.get(userId);
+        if (user == null) {
+            return "";
+        }
+        return !TextUtils.isEmpty(user.originalDisplayName) ? user.originalDisplayName : (user.displayName != null ? user.displayName : "");
+    }
+
+    public interface ContactEdit {
+        User run() throws IOException;
+    }
+
+    private void editContact(ContactEdit edit, Utilities.Callback<Boolean> done) {
+        io.execute(() -> {
+            boolean ok = false;
+            try {
+                rememberUser(edit.run());
+                ok = true;
+            } catch (Exception e) {
+                FoxMesLog.e("contact edit failed", e);
+            }
+            final boolean result = ok;
+            AndroidUtilities.runOnUIThread(() -> done.run(result));
+        });
+    }
+
+    public String contactNote(long userId) {
+        User user = users.get(userId);
+        return user != null ? nonNull(user.contactNote) : "";
+    }
+
+    public void setContactFields(long userId, String name, String note, Utilities.Callback<Boolean> done) {
+        editContact(() -> api.setContactFields(userId, name, note), done);
+    }
+
+    public void setContactPhoto(long userId, File jpeg, Utilities.Callback<Boolean> done) {
+        editContact(() -> api.setContactPhoto(userId, api.uploadContactPhoto(jpeg)), done);
+    }
+
+    public void resetContactPhoto(long userId, Utilities.Callback<Boolean> done) {
+        editContact(() -> api.setContactPhoto(userId, 0), done);
+    }
+
+    public ArrayList<Long> blockedUserIds() {
+        ArrayList<Long> result = new ArrayList<>();
+        for (User user : users.values()) {
+            if (Boolean.TRUE.equals(user.blocked)) {
+                result.add(user.id);
+            }
+        }
+        return result;
     }
 
     public ArrayList<TLRPC.User> tlUsers(Collection<Long> ids) {

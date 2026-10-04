@@ -155,10 +155,6 @@ public final class FoxMesConfiguration {
         return webPath("@" + username + "/settings");
     }
 
-    public static String blockedUsersURL(String username) {
-        return webPath("@" + username + "/settings/blocked");
-    }
-
     public static String publicProfileLink(String username) {
         return "https://" + internalLinksDomain + "/@" + username;
     }

@@ -2557,6 +2557,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     finishFragment();
                 } else if (id == FoxMesUi.CREATE_MEET) {
                     FoxMesUi.createMeet(ProfileActivity.this, userId);
+                } else if (id == FoxMesUi.EDIT_CONTACT) {
+                    FoxMesUi.editContact(ProfileActivity.this, userId);
                 } else if (id == block_contact) {
                     onBlockContactClicked(false);
                 } else if (id == add_contact) {
@@ -16308,6 +16310,10 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     .show();
         });
         o.add(R.drawable.msg_edit, getString(R.string.Edit), () -> {
+            if (FoxMesFeatureGate.enabled) {
+                FoxMesUi.editContact(ProfileActivity.this, userId, true);
+                return;
+            }
             final Bundle args = new Bundle();
             args.putLong("user_id", userId);
             args.putBoolean("focus_notes", true);

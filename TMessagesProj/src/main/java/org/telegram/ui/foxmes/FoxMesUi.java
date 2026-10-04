@@ -6,6 +6,7 @@ import android.net.Uri;
 import android.text.TextUtils;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SendMessagesHelper;
 import org.telegram.messenger.UserConfig;
@@ -20,6 +21,7 @@ import org.telegram.ui.Components.BulletinFactory;
 public final class FoxMesUi {
 
     public static final int CREATE_MEET = 0x0F0E0001;
+    public static final int EDIT_CONTACT = 0x0F0E0002;
 
     private FoxMesUi() {
     }
@@ -44,11 +46,6 @@ public final class FoxMesUi {
     public static void openProfileSettings(Context context, int account) {
         String username = username(account);
         openExternal(context, username != null ? FoxMesConfiguration.profileSettingsURL(username) : FoxMesConfiguration.webURL());
-    }
-
-    public static void openBlockedUsers(Context context, int account) {
-        String username = username(account);
-        openExternal(context, username != null ? FoxMesConfiguration.blockedUsersURL(username) : FoxMesConfiguration.webURL());
     }
 
     public static void openFaq(Context context) {
@@ -86,7 +83,18 @@ public final class FoxMesUi {
         if (menu == null || user == null || user.bot || UserObject.isDeleted(user) || UserObject.isUserSelf(user)) {
             return;
         }
+        menu.addSubItem(EDIT_CONTACT, R.drawable.msg_edit, LocaleController.getString(R.string.EditContact));
         menu.addSubItem(CREATE_MEET, R.drawable.msg_calls, "Create Meet");
+    }
+
+    public static void editContact(BaseFragment fragment, long userId) {
+        editContact(fragment, userId, false);
+    }
+
+    public static void editContact(BaseFragment fragment, long userId, boolean focusNote) {
+        if (fragment != null && userId != 0) {
+            fragment.presentFragment(FoxMesEditContactActivity.of(userId, focusNote));
+        }
     }
 
     public static void createMeet(BaseFragment fragment, long userId) {

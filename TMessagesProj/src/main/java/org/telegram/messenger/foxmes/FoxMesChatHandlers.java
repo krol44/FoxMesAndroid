@@ -614,6 +614,8 @@ final class FoxMesChatHandlers {
         full.phone_calls_available = FoxMesFeatureGate.calls && id != runtime.selfId();
         full.video_calls_available = full.phone_calls_available;
         full.can_pin_message = true;
+        full.blocked = user != null && Boolean.TRUE.equals(user.blocked);
+        FoxMesRuntime.applyNote(full, user != null ? user.contactNote : null);
         full.common_chats_count = 0;
         if (chatId != 0) {
             try {

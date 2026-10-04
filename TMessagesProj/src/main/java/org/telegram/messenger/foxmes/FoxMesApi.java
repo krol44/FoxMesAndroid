@@ -101,6 +101,38 @@ public final class FoxMesApi {
         return http.request("GET", "/users/" + id, null, null, User.class);
     }
 
+    public User setUserBlocked(long id, boolean blocked) throws IOException {
+        return http.request(blocked ? "PUT" : "DELETE", "/users/" + id + "/block", null,
+                FoxMesJson.body().put("operation_id", FoxMesJson.operationId()), User.class);
+    }
+
+    // A null field is left out, and the server keeps its value.
+    public User setContactFields(long id, String name, String note) throws IOException {
+        FoxMesJson.Body body = FoxMesJson.body().put("operation_id", FoxMesJson.operationId());
+        if (name != null) {
+            body.put("name", name);
+        }
+        if (note != null) {
+            body.put("note", note);
+        }
+        return http.request("PUT", "/users/" + id + "/contact", null, body, User.class);
+    }
+
+    public User setContactPhoto(long id, long fileId) throws IOException {
+        return http.request("PUT", "/users/" + id + "/contact", null,
+                FoxMesJson.body().put("photo_file_id", fileId).put("operation_id", FoxMesJson.operationId()), User.class);
+    }
+
+    public long uploadContactPhoto(File file) throws IOException {
+        RequestBody part = RequestBody.create(file, MediaType.parse("image/jpeg"));
+        MultipartBody body = new MultipartBody.Builder("FoxMes-" + UUID.randomUUID())
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("file", "contact.jpg", part)
+                .build();
+        String text = http.upload("POST", "/upload/contact-photo", null, body, null, new String[1], 120, null);
+        return parseUploaded(text).id;
+    }
+
     public Resolved resolve(String name) throws IOException {
         return http.request("GET", "/resolve/" + name, query("light", "1"), null, Resolved.class);
     }

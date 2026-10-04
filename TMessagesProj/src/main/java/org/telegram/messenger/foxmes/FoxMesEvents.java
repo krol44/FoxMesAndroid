@@ -391,6 +391,8 @@ public final class FoxMesEvents {
         if (user == null || user.id == 0) {
             return false;
         }
+        User previous = runtime.knownUser(user.id);
+        boolean wasBlocked = previous != null && Boolean.TRUE.equals(previous.blocked);
         runtime.rememberUser(user);
         ArrayList<TLRPC.User> users = runtime.tlUsers(Collections.singletonList(user.id));
         TLRPC.User tl = null;
@@ -416,6 +418,12 @@ public final class FoxMesEvents {
         TL_update.TL_updateUser changed = new TL_update.TL_updateUser();
         changed.user_id = user.id;
         updates.add(changed);
+        if (user.blocked != null && user.blocked != wasBlocked) {
+            TL_update.TL_updatePeerBlocked blocked = new TL_update.TL_updatePeerBlocked();
+            blocked.blocked = user.blocked;
+            blocked.peer_id = FoxMesTL.peer(user.id);
+            updates.add(blocked);
+        }
         dispatch(runtime, updates, users, seq);
         return true;
     }
