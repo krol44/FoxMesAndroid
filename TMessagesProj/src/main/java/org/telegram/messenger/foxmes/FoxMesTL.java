@@ -168,6 +168,11 @@ public final class FoxMesTL {
             user.flags = TLObject.setFlag(user.flags, FLAG_5, true);
             context.recordPhotoUrl(photo.photo_id, avatar);
         }
+        if (source.appearance != null) {
+            user.color = FoxMesAppearanceHandlers.color(source.appearance.nameColorId, source.appearance.backgroundEmojiId);
+            user.profile_color = FoxMesAppearanceHandlers.color(source.appearance.profileColorId, source.appearance.profileBackgroundEmojiId);
+            user.flags2 |= 256 | 512;
+        }
         boolean online = !self && context.isOnline(source.id);
         user.status = status(online);
         user.flags = TLObject.setFlag(user.flags, FLAG_6, true);

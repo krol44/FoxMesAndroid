@@ -689,6 +689,9 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
     public void rememberUser(User user) {
         if (user != null && user.id != 0) {
             User previous = users.get(user.id);
+            if (previous != null && (user.appearance == null || (previous.appearance != null && previous.appearance.revision > user.appearance.revision))) {
+                user.appearance = previous.appearance;
+            }
             if (user.blocked == null && previous != null) {
                 user.blocked = previous.blocked;
                 user.contactName = previous.contactName;

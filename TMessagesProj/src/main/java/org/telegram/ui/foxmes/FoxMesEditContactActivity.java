@@ -2,7 +2,13 @@ package org.telegram.ui.foxmes;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.animation.AnimatorSet;
+import android.animation.ObjectAnimator;
 import android.content.Context;
+import android.graphics.Canvas;
+import android.graphics.Paint;
 import android.os.Bundle;
 import android.text.TextUtils;
 import android.util.TypedValue;
@@ -15,6 +21,7 @@ import android.widget.TextView;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLoader;
+import org.telegram.messenger.ImageLocation;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserObject;
@@ -28,11 +35,13 @@ import org.telegram.ui.Cells.EditTextCell;
 import org.telegram.ui.Cells.ShadowSectionCell;
 import org.telegram.ui.Cells.TextCell;
 import org.telegram.ui.Cells.TextInfoPrivacyCell;
+import org.telegram.ui.Components.AlertsCreator;
 import org.telegram.ui.Components.AvatarDrawable;
 import org.telegram.ui.Components.BackupImageView;
 import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.Components.ImageUpdater;
 import org.telegram.ui.Components.LayoutHelper;
+import org.telegram.ui.Components.RadialProgressView;
 
 import java.io.File;
 
@@ -52,6 +61,10 @@ public class FoxMesEditContactActivity extends BaseFragment implements ImageUpda
     private TextCell resetPhotoCell;
     private TextCell blockCell;
     private BackupImageView avatarImage;
+    private View avatarOverlay;
+    private RadialProgressView avatarProgressView;
+    private AnimatorSet avatarAnimation;
+    private boolean uploadingPhoto;
     private TextView nameView;
     private boolean saving;
 
@@ -145,6 +158,24 @@ public class FoxMesEditContactActivity extends BaseFragment implements ImageUpda
         avatarImage = new BackupImageView(context);
         avatarImage.setRoundRadius(dp(32));
         header.addView(avatarImage, LayoutHelper.createFrame(64, 64, (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.TOP, 16, 13, 16, 13));
+        Paint overlayPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        overlayPaint.setColor(0x55000000);
+        avatarOverlay = new View(context) {
+            @Override
+            protected void onDraw(Canvas canvas) {
+                if (avatarImage != null && avatarImage.getImageReceiver().hasNotThumb()) {
+                    overlayPaint.setAlpha((int) (0x55 * avatarImage.getImageReceiver().getCurrentAlpha()));
+                    canvas.drawCircle(getMeasuredWidth() / 2.0f, getMeasuredHeight() / 2.0f, getMeasuredWidth() / 2.0f, overlayPaint);
+                }
+            }
+        };
+        header.addView(avatarOverlay, LayoutHelper.createFrame(64, 64, (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.TOP, 16, 13, 16, 13));
+        avatarProgressView = new RadialProgressView(context);
+        avatarProgressView.setSize(dp(30));
+        avatarProgressView.setProgressColor(0xffffffff);
+        avatarProgressView.setNoProgress(false);
+        header.addView(avatarProgressView, LayoutHelper.createFrame(64, 64, (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.TOP, 16, 13, 16, 13));
+        showAvatarProgress(uploadingPhoto, false);
         nameView = new TextView(context);
         nameView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
         nameView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 18);
@@ -189,12 +220,15 @@ public class FoxMesEditContactActivity extends BaseFragment implements ImageUpda
         resetPhotoCell.setTextAndIcon(LocaleController.getString(R.string.ResetToOriginalPhoto), R.drawable.msg_photo_switch2, false);
         resetPhotoCell.setBackground(Theme.getSelectorDrawable(true));
         resetPhotoCell.setColors(Theme.key_windowBackgroundWhiteBlueIcon, Theme.key_windowBackgroundWhiteBlueButton);
-        resetPhotoCell.setOnClickListener(v -> runtime().resetContactPhoto(userId, ok -> {
-            if (!ok) {
-                showError("Could not reset the photo.");
-            }
-            refresh();
-        }));
+        resetPhotoCell.setOnClickListener(v -> AlertsCreator.createSimpleAlert(context,
+                LocaleController.getString(R.string.ResetToOriginalPhotoTitle),
+                LocaleController.formatString(R.string.ResetToOriginalPhotoMessage, UserObject.getFirstName(user())),
+                LocaleController.getString(R.string.Reset), () -> runtime().resetContactPhoto(userId, ok -> {
+                    if (!ok) {
+                        showError("Could not reset the photo.");
+                    }
+                    refresh();
+                }), null).show());
         layout.addView(resetPhotoCell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
         TextInfoPrivacyCell info = new TextInfoPrivacyCell(context);
@@ -224,7 +258,9 @@ public class FoxMesEditContactActivity extends BaseFragment implements ImageUpda
             return;
         }
         nameView.setText(UserObject.getUserName(user));
-        avatarImage.setForUserOrChat(user, new AvatarDrawable(user));
+        if (!uploadingPhoto) {
+            avatarImage.setForUserOrChat(user, new AvatarDrawable(user));
+        }
         resetPhotoCell.setVisibility(runtime().hasContactPhoto(userId) ? View.VISIBLE : View.GONE);
         boolean blocked = getMessagesController().blockePeers.indexOfKey(userId) >= 0;
         blockCell.setText(LocaleController.getString(blocked ? R.string.Unblock : R.string.BlockUser), false);
@@ -295,15 +331,76 @@ public class FoxMesEditContactActivity extends BaseFragment implements ImageUpda
 
     @Override
     public void didUploadPhoto(TLRPC.InputFile photo, TLRPC.InputFile video, double videoStartTimestamp, String videoPath, TLRPC.PhotoSize bigSize, TLRPC.PhotoSize smallSize, boolean isVideo, TLRPC.VideoSize emojiMarkup) {
-        if (bigSize == null) {
+        AndroidUtilities.runOnUIThread(() -> {
+            if (bigSize == null || imageUpdater.isCanceled()) {
+                return;
+            }
+            uploadingPhoto = true;
+            if (smallSize != null) {
+                avatarImage.setImage(ImageLocation.getForLocal(smallSize.location), "50_50", new AvatarDrawable(user()), user());
+            }
+            showAvatarProgress(true, false);
+            File file = FileLoader.getInstance(currentAccount).getPathToAttach(bigSize, true);
+            runtime().setContactPhoto(userId, file, ok -> {
+                uploadingPhoto = false;
+                showAvatarProgress(false, true);
+                if (!ok) {
+                    showError("Could not set the photo.");
+                }
+                refresh();
+            });
+        });
+    }
+
+    // The same spinner over the avatar as the upstream contact editor.
+    private void showAvatarProgress(boolean show, boolean animated) {
+        if (avatarProgressView == null) {
             return;
         }
-        File file = FileLoader.getInstance(currentAccount).getPathToAttach(bigSize, true);
-        runtime().setContactPhoto(userId, file, ok -> {
-            if (!ok) {
-                showError("Could not set the photo.");
+        if (avatarAnimation != null) {
+            avatarAnimation.cancel();
+            avatarAnimation = null;
+        }
+        if (animated) {
+            avatarAnimation = new AnimatorSet();
+            if (show) {
+                avatarProgressView.setVisibility(View.VISIBLE);
+                avatarOverlay.setVisibility(View.VISIBLE);
+                avatarAnimation.playTogether(
+                    ObjectAnimator.ofFloat(avatarProgressView, View.ALPHA, 1.0f),
+                    ObjectAnimator.ofFloat(avatarOverlay, View.ALPHA, 1.0f)
+                );
+            } else {
+                avatarAnimation.playTogether(
+                    ObjectAnimator.ofFloat(avatarProgressView, View.ALPHA, 0.0f),
+                    ObjectAnimator.ofFloat(avatarOverlay, View.ALPHA, 0.0f)
+                );
             }
-            refresh();
-        });
+            avatarAnimation.setDuration(180);
+            avatarAnimation.addListener(new AnimatorListenerAdapter() {
+                @Override
+                public void onAnimationEnd(Animator animation) {
+                    if (avatarAnimation == null || avatarProgressView == null) {
+                        return;
+                    }
+                    if (!show) {
+                        avatarProgressView.setVisibility(View.INVISIBLE);
+                        avatarOverlay.setVisibility(View.INVISIBLE);
+                    }
+                    avatarAnimation = null;
+                }
+
+                @Override
+                public void onAnimationCancel(Animator animation) {
+                    avatarAnimation = null;
+                }
+            });
+            avatarAnimation.start();
+        } else {
+            avatarProgressView.setAlpha(show ? 1.0f : 0.0f);
+            avatarProgressView.setVisibility(show ? View.VISIBLE : View.INVISIBLE);
+            avatarOverlay.setAlpha(show ? 1.0f : 0.0f);
+            avatarOverlay.setVisibility(show ? View.VISIBLE : View.INVISIBLE);
+        }
     }
 }

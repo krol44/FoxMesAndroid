@@ -104,6 +104,10 @@ final class FoxMesStickerHandlers {
             runtime.ensureCatalog();
             Vector<TLRPC.Document> result = new Vector<>(TLRPC.Document::TLdeserialize);
             for (Long id : req.document_id) {
+                if (FoxMesAppearanceHandlers.isIcon(id)) {
+                    result.objects.add(FoxMesAppearanceHandlers.document(runtime, id));
+                    continue;
+                }
                 ReactionCatalogItem item = runtime.catalogItem(id);
                 if (item != null) {
                     result.objects.add(catalogDocument(runtime, item, false));
@@ -119,6 +123,10 @@ final class FoxMesStickerHandlers {
         transport.on(TLRPC.TL_messages_getAllStickers.class, FoxMesTransport.Lane.IO, r -> r.reply(allSets(runtime, false)));
         transport.on(TLRPC.TL_messages_getStickerSet.class, FoxMesTransport.Lane.IO, r -> {
             TLRPC.TL_messages_getStickerSet req = (TLRPC.TL_messages_getStickerSet) r.request;
+            if (req.stickerset instanceof TLRPC.TL_inputStickerSetEmojiDefaultStatuses) {
+                r.reply(FoxMesAppearanceHandlers.iconSet(runtime));
+                return;
+            }
             TLRPC.TL_messages_stickerSet set = stickerSet(runtime, req.stickerset);
             if (set == null) {
                 r.fail(400, "STICKERSET_INVALID");

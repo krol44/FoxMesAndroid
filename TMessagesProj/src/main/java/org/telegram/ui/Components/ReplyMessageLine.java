@@ -29,6 +29,8 @@ import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.foxmes.FoxMesFeatureGate;
+import org.telegram.ui.foxmes.FoxMesReplyAppearance;
 import org.telegram.messenger.utils.RadiiUtils;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.Theme;
@@ -235,6 +237,14 @@ public class ReplyMessageLine {
     public static final int TYPE_CONTACT = 4;
 
     public int check(MessageObject messageObject, TLRPC.User currentUser, TLRPC.Chat currentChat, Theme.ResourcesProvider resourcesProvider, final int type) {
+        if (FoxMesFeatureGate.enabled) {
+            return FoxMesReplyAppearance.check(this, messageObject, resourcesProvider, type,
+                    animate -> checkNative(messageObject, currentUser, currentChat, resourcesProvider, type, animate));
+        }
+        return checkNative(messageObject, currentUser, currentChat, resourcesProvider, type, true);
+    }
+
+    private int checkNative(MessageObject messageObject, TLRPC.User currentUser, TLRPC.Chat currentChat, Theme.ResourcesProvider resourcesProvider, final int type, boolean animate) {
         final boolean dark = resourcesProvider != null ? resourcesProvider.isDark() : Theme.isCurrentThemeDark();
         if (messageObject != null && !(messageObject.isOutOwner() || type == TYPE_CODE) && messageObject.overrideLinkPeerColor != null) {
             return resolveCollectionColor(messageObject, messageObject.overrideLinkPeerColor, resourcesProvider);
@@ -249,7 +259,8 @@ public class ReplyMessageLine {
             color1 = color2 = color3 = Theme.getColor(Theme.key_chat_inReplyLine, resourcesProvider);
             backgroundColor = Theme.multAlpha(color1, dark ? 0.12f : 0.10f);
             emojiColor = getColor();
-            return nameColorAnimated.set(nameColor = Theme.getColor(Theme.key_chat_inReplyNameText, resourcesProvider));
+            nameColor = Theme.getColor(Theme.key_chat_inReplyNameText, resourcesProvider);
+            return animate ? nameColorAnimated.set(nameColor) : nameColor;
         } else if (type == TYPE_CONTACT
                 && messageObject.messageOwner != null
                 && MessageObject.getMedia(messageObject.messageOwner) != null
@@ -460,7 +471,7 @@ public class ReplyMessageLine {
             sticker.set(stickerDocumentId, true);
         }
         emojiColor = getColor();
-        return nameColorAnimated.set(nameColor);
+        return animate ? nameColorAnimated.set(nameColor) : nameColor;
     }
 
     public boolean hasSticker() {

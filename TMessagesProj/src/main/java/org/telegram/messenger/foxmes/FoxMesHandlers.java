@@ -13,6 +13,7 @@ final class FoxMesHandlers {
 
     static void register(FoxMesTransport transport, FoxMesRuntime runtime) {
         FoxMesConfigHandlers.register(transport, runtime);
+        FoxMesAppearanceHandlers.register(transport, runtime);
         FoxMesChatHandlers.register(transport, runtime);
         FoxMesContactHandlers.register(transport, runtime);
         FoxMesMutationHandlers.register(transport, runtime);

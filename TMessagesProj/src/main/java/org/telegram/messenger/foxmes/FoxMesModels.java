@@ -39,7 +39,25 @@ public final class FoxMesModels {
         public String originalDisplayName;
         @SerializedName("contact_note")
         public String contactNote;
+        @SerializedName("peer_appearance") public PeerAppearance appearance;
     }
+
+    public static class PeerAppearance {
+        @SerializedName("name_color_id") public Integer nameColorId;
+        @SerializedName("background_emoji_id") public Long backgroundEmojiId;
+        @SerializedName("profile_color_id") public Integer profileColorId;
+        @SerializedName("profile_background_emoji_id") public Long profileBackgroundEmojiId;
+        public long revision;
+    }
+    public static class ColorOption {
+        public int id;
+        public List<Integer> light, dark, palette;
+        @SerializedName("dark_palette") public List<Integer> darkPalette;
+    }
+    public static class ColorCatalog { public int hash; public List<ColorOption> colors; }
+    public static class BackgroundIcon { public long id, size; public String emoji; @SerializedName("asset_url") public String assetUrl; }
+    public static class BackgroundIcons { public int hash; public List<BackgroundIcon> emojis; }
+    public static class AppearanceOperation { public String status; public User result; }
 
     public static class Me extends User {
         @SerializedName("event_seq")

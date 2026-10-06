@@ -12358,7 +12358,6 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         }
 
         if (selfUser && FoxMesFeatureGate.hidesProfileEditing()) {
-            otherItem.hideSubItem(edit_color);
             otherItem.hideSubItem(set_username);
         } else if (userId != 0 && !selfUser && FoxMesFeatureGate.hidesPeerMoreMenu()) {
             otherItem.removeAllSubItems();

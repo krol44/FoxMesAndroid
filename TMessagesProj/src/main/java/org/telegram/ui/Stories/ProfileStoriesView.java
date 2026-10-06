@@ -497,6 +497,16 @@ public class ProfileStoriesView extends View implements NotificationCenter.Notif
 
     @Override
     protected void dispatchDraw(Canvas canvas) {
+        if (org.telegram.messenger.foxmes.FoxMesFeatureGate.enabled) {
+            org.telegram.ui.foxmes.FoxMesProfileAppearance.paintOutline(this, canvas, currentAccount, dialogId,
+                    isTopic, avatarContainer, avatarImage, expandProgress,
+                    () -> dispatchDrawNative(canvas));
+            return;
+        }
+        dispatchDrawNative(canvas);
+    }
+
+    private void dispatchDrawNative(Canvas canvas) {
         float rright = rightAnimated.set(this.right);
         float avatarPullProgress = Utilities.clamp((avatarContainer.getScaleX() - 1f) / 0.4f, 1f, 0f);
         float insetMain = lerp(dpf2(4f), dpf2(3.5f), avatarPullProgress);

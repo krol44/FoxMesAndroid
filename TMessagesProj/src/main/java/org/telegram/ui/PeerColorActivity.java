@@ -85,6 +85,7 @@ import org.telegram.messenger.SvgHelper;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.foxmes.FoxMesFeatureGate;
 import org.telegram.messenger.utils.DrawableUtils;
 import org.telegram.messenger.utils.GradientProtectionDrawable;
 import org.telegram.messenger.utils.OnPostDrawView;
@@ -1188,7 +1189,7 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
                 shadowRow = rowCount++;
             }
             final StarsController.GiftsList giftsList = type == PAGE_NAME ? giftsWithPeerColor : gifts;
-            if ((type == PAGE_PROFILE || type == PAGE_NAME) && giftsList != null) {
+            if (!FoxMesFeatureGate.enabled && (type == PAGE_PROFILE || type == PAGE_NAME) && giftsList != null) {
                 giftsTabsRow = rowCount++;
                 if (selectedTabGift == null) {
                     for (int i = 0; i < giftsList.gifts.size(); ++i) {
