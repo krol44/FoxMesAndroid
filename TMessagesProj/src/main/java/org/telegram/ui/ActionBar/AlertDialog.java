@@ -1668,6 +1668,14 @@ public class AlertDialog extends Dialog implements Drawable.Callback, Notificati
     }
 
     public void setMessage(CharSequence text) {
+        if (org.telegram.messenger.foxmes.FoxMesFeatureGate.enabled) {
+            org.telegram.ui.foxmes.FoxMesAlertText.setMessage(text, this::setNativeMessage);
+            return;
+        }
+        setNativeMessage(text);
+    }
+
+    private void setNativeMessage(CharSequence text) {
         message = text;
         if (messageTextView != null) {
             if (!TextUtils.isEmpty(message)) {
@@ -1899,6 +1907,9 @@ public class AlertDialog extends Dialog implements Drawable.Callback, Notificati
         }
 
         public Builder setMessage(CharSequence message) {
+            if (org.telegram.messenger.foxmes.FoxMesFeatureGate.enabled) {
+                return org.telegram.ui.foxmes.FoxMesAlertText.setMessage(this, message, text -> alertDialog.message = text);
+            }
             alertDialog.message = message;
             return this;
         }

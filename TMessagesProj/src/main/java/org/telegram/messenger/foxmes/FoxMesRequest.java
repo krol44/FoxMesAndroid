@@ -27,6 +27,7 @@ public final class FoxMesRequest {
     public final int flags;
     public final int connectionType;
     public final int token;
+    public final long profilePhotoAtSend;
     private final RequestDelegate onComplete;
     private final RequestDelegateTimestamp onCompleteTimestamp;
     private final QuickAckDelegate onQuickAck;
@@ -49,6 +50,10 @@ public final class FoxMesRequest {
         this.flags = flags;
         this.connectionType = connectionType;
         this.token = token;
+        TLRPC.User current = org.telegram.messenger.UserConfig.getInstance(account).getCurrentUser();
+        this.profilePhotoAtSend = request instanceof TLRPC.TL_photos_updateProfilePhoto
+                && ((TLRPC.TL_photos_updateProfilePhoto) request).id instanceof TLRPC.TL_inputPhotoEmpty
+                && current != null && current.photo != null ? current.photo.photo_id : 0;
     }
 
     public boolean isCancelled() {

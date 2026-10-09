@@ -8496,6 +8496,9 @@ public class MediaDataController extends BaseController {
     }
 
     public String getDoubleTapReaction() {
+        if (org.telegram.messenger.foxmes.FoxMesFeatureGate.enabled) {
+            return org.telegram.messenger.foxmes.FoxMesQuickReaction.get(currentAccount);
+        }
         if (doubleTapReaction != null) {
             return doubleTapReaction;
         }
@@ -8511,6 +8514,10 @@ public class MediaDataController extends BaseController {
     }
 
     public void setDoubleTapReaction(String reaction) {
+        if (org.telegram.messenger.foxmes.FoxMesFeatureGate.enabled) {
+            org.telegram.messenger.foxmes.FoxMesQuickReaction.set(currentAccount, reaction);
+            return;
+        }
         MessagesController.getEmojiSettings(currentAccount).edit().putString("reaction_on_double_tap", reaction).apply();
         doubleTapReaction = reaction;
     }

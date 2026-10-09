@@ -126,6 +126,10 @@ final class FoxMesMutationHandlers {
         });
         transport.on(TLRPC.TL_messages_reorderPinnedDialogs.class, FoxMesTransport.Lane.SERIAL, r -> {
             TLRPC.TL_messages_reorderPinnedDialogs req = (TLRPC.TL_messages_reorderPinnedDialogs) r.request;
+            if (req.folder_id >= 2) {
+                FoxMesFolders.reorderPins(runtime, r, req.folder_id, req.order);
+                return;
+            }
             ArrayList<Long> ids = new ArrayList<>();
             for (TLRPC.InputDialogPeer peer : req.order) {
                 long chatId = runtime.chatForPeer(peerUserId(peer, runtime));
@@ -382,15 +386,13 @@ final class FoxMesMutationHandlers {
         for (TLRPC.Reaction reaction : req.reaction) {
             if (reaction instanceof TLRPC.TL_reactionCustomEmoji) {
                 long id = ((TLRPC.TL_reactionCustomEmoji) reaction).document_id;
-                if (runtime.catalogItem(id) != null) {
-                    ids.add((int) id);
-                }
+                if (runtime.catalogItem(id) == null) { r.fail(400, "REACTION_INVALID"); return; }
+                ids.add((int) id);
             } else if (reaction instanceof TLRPC.TL_reactionEmoji) {
                 ReactionCatalogItem item = runtime.catalogItemForEmoji(((TLRPC.TL_reactionEmoji) reaction).emoticon);
-                if (item != null) {
-                    ids.add(item.id);
-                }
-            }
+                if (item == null) { r.fail(400, "REACTION_INVALID"); return; }
+                ids.add(item.id);
+            } else { r.fail(400, "REACTION_INVALID"); return; }
         }
         ArrayList<Integer> list = new ArrayList<>(ids);
         int max = catalog != null && catalog.maxSelected > 0 ? catalog.maxSelected : list.size();

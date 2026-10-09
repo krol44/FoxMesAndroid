@@ -43,6 +43,8 @@ import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.ChatActivity;
 import org.telegram.ui.Components.AnimatedEmojiSpan;
 import org.telegram.ui.Components.AvatarsDrawable;
+import org.telegram.messenger.foxmes.FoxMesFeatureGate;
+import org.telegram.ui.foxmes.FoxMesUi;
 import org.telegram.ui.Components.ButtonBounce;
 import org.telegram.ui.Components.ColoredImageSpan;
 import org.telegram.ui.Components.Text;
@@ -199,7 +201,9 @@ public class UserInfoCell extends View implements NotificationCenter.Notificatio
         }
 
         rowsWidth = rowsKeysWidth + dp(7.66f) + rowsValuesWidth;
-        if (user != null && !user.verified && !UserObject.isService(user.id)) {
+        if (FoxMesFeatureGate.enabled && (footer = FoxMesUi.chatRequestFooter(currentAccount, dialogId)) != null) {
+            height += dp(12) + footer.getHeight() + dp(15.33f);
+        } else if (user != null && !user.verified && !UserObject.isService(user.id)) {
             if (user.bot_verification_icon != 0) {
                 if (userFull != null && userFull.bot_verification != null) {
                     final TL_bots.botVerification verification = userFull.bot_verification;

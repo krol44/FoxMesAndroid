@@ -4052,7 +4052,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     FileLog.e(e);
                 }
             }));
-        } else if (folderSlug != null) {
+        } else if (folderSlug != null && !org.telegram.messenger.foxmes.FoxMesFeatureGate.hidesChatFolderSharing()) {
             TL_chatlists.TL_chatlists_checkChatlistInvite req = new TL_chatlists.TL_chatlists_checkChatlistInvite();
             req.slug = folderSlug;
             requestId[0] = ConnectionsManager.getInstance(intentAccount).sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {

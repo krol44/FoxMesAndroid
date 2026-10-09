@@ -14,6 +14,8 @@ import org.telegram.messenger.foxmes.FoxMesModels.Message;
 import org.telegram.messenger.foxmes.FoxMesModels.NotificationDefaults;
 import org.telegram.messenger.foxmes.FoxMesModels.Reaction;
 import org.telegram.messenger.foxmes.FoxMesModels.Reminder;
+import org.telegram.messenger.foxmes.FoxMesModels.ReadState;
+import org.telegram.messenger.foxmes.FoxMesModels.ReceiptState;
 import org.telegram.messenger.foxmes.FoxMesModels.User;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_update;
@@ -140,8 +142,20 @@ public final class FoxMesEvents {
             case "settings.updated":
                 return settingsUpdated(runtime, data, seq);
             case "user.created":
+            case "user.photos.updated":
+                boolean applied = userUpdated(runtime, data, seq);
+                FoxMesProfilePhotos.invalidate(runtime, data);
+                return applied;
             case "user.updated":
                 return userUpdated(runtime, data, seq);
+            case "folders.updated":
+                if (!FoxMesFolders.of(runtime).receive(FoxMesJson.parse(data, FoxMesFolders.State.class))) return false;
+                dispatch(runtime, Collections.singletonList(new TL_update.TL_updateDialogFilters()), new ArrayList<>(), seq);
+                return true;
+            case "stickers.favorites.updated":
+                if (!runtime.stickerFavorites().receive(FoxMesJson.parse(data, FoxMesModels.StickerFavoritesState.class))) return false;
+                dispatch(runtime, Collections.singletonList(new TL_update.TL_updateFavedStickers()), new ArrayList<>(), seq);
+                return true;
             case "gifs.updated":
                 dispatch(runtime, Collections.singletonList(new TL_update.TL_updateSavedGifs()), new ArrayList<>(), seq);
                 return true;
@@ -158,8 +172,23 @@ public final class FoxMesEvents {
                 return chatDeleted(runtime, data, seq, false);
             case "chat.updated":
                 return chatUpdated(runtime, data, seq);
+            case "chat.request":
+                FoxMesChatRequests.apply(runtime, FoxMesJson.parse(data, FoxMesModels.ChatRequestResult.class));
+                return false;
+            case "chat.settings.updated": {
+                long chatId = chatIdOf(data);
+                JsonObject appearance = FoxMesJson.object(data, "appearance");
+                if (appearance == null || runtime.peerForChat(chatId) == 0) return chatsRefreshed(runtime, seq);
+                FoxMesChatAppearance.apply(runtime, chatId, FoxMesJson.parse(appearance, FoxMesChatAppearance.Appearance.class), seq > 0 ? () -> runtime.saveEventSeq(seq) : null);
+                return true;
+            }
+            case "themes.updated":
+                AndroidUtilities.runOnUIThread(() -> org.telegram.ui.ActionBar.Theme.loadRemoteThemes(runtime.account, true));
+                return false;
+            case "wallpapers.updated":
+                FoxMesChatAppearance.refreshDefault(runtime);
+                return chatsRefreshed(runtime, seq);
             case "chat.pinned":
-            case "chat.settings.updated":
                 return chatsRefreshed(runtime, seq);
             case "chat.typing":
                 typing(runtime, data);
@@ -345,30 +374,49 @@ public final class FoxMesEvents {
         }
         long reader = FoxMesJson.getLong(state, "reader_id", FoxMesJson.getLong(state, "user_id", 0));
         int readThrough = (int) FoxMesJson.getLong(state, "read_through_id", FoxMesJson.getLong(state, "message_id", 0));
-        if (readThrough <= 0) {
+        if (readThrough < 0) {
             return false;
         }
-        TLRPC.Update update;
+        ArrayList<TLRPC.Update> updates = new ArrayList<>();
         if (reader == 0 || reader == runtime.selfId()) {
             TL_update.TL_updateReadHistoryInbox inbox = new TL_update.TL_updateReadHistoryInbox();
             inbox.peer = FoxMesTL.peer(peer);
-            inbox.max_id = readThrough;
-            inbox.still_unread_count = (int) FoxMesJson.getLong(state, "unread_count", 0);
-            update = inbox;
+            ReadState readState = FoxMesJson.parse(state, ReadState.class);
+            readState.readThroughId = readThrough;
+            Chat chat = runtime.chat(chatId);
+            if (chat != null) {
+                chat.unreadCount = readState.unreadCount;
+                if (chat.receiptState == null) chat.receiptState = new ReceiptState();
+                chat.receiptState.inbox = readState;
+                if (peer == runtime.selfId()) chat.receiptState.outbox = readState;
+            }
+            inbox.max_id = peer == runtime.selfId() ? readState.savedHistoryReadId() : readThrough;
+            inbox.still_unread_count = readState.unreadCount;
+            updates.add(inbox);
+            if (peer == runtime.selfId()) {
+                TL_update.TL_updateReadHistoryOutbox outbox = new TL_update.TL_updateReadHistoryOutbox();
+                outbox.peer = FoxMesTL.peer(peer);
+                outbox.max_id = inbox.max_id;
+                updates.add(outbox);
+            }
         } else {
             runtime.rememberOutboxRead(chatId, readThrough, FoxMesJson.optString(state, "read_at"));
             TL_update.TL_updateReadHistoryOutbox outbox = new TL_update.TL_updateReadHistoryOutbox();
             outbox.peer = FoxMesTL.peer(peer);
             outbox.max_id = readThrough;
-            update = outbox;
+            updates.add(outbox);
         }
-        dispatch(runtime, Collections.singletonList(update), runtime.tlUsers(Collections.singletonList(peer)), seq);
+        dispatch(runtime, updates, runtime.tlUsers(Collections.singletonList(peer)), seq);
         return true;
     }
 
     private long appliedSettingsRevision = -1;
 
-    private boolean settingsUpdated(FoxMesRuntime runtime, JsonObject data, long seq) {
+    private boolean settingsUpdated(FoxMesRuntime runtime, JsonObject data, long seq) throws IOException {
+        JsonObject wallpaperDto = FoxMesJson.object(data, "default_wallpaper");
+        if (wallpaperDto != null) {
+            FoxMesChatAppearance.applyDefault(runtime, FoxMesJson.parse(wallpaperDto, FoxMesChatAppearance.WallpaperState.class), () -> runtime.saveEventSeq(seq)); return true;
+        }
         JsonObject defaultsDto = FoxMesJson.object(data, "notification_defaults");
         if (defaultsDto == null) {
             return false;
@@ -526,6 +574,9 @@ public final class FoxMesEvents {
             return false;
         }
         runtime.invalidateSnapshot();
+        if (chat.request != null) {
+            FoxMesChatRequests.syncNotification(runtime, peer, false);
+        }
         ArrayList<TLRPC.Update> updates = diff(previous, chat, peer);
         if (updates.isEmpty()) {
             return false;
@@ -623,13 +674,20 @@ public final class FoxMesEvents {
             }
             updates.add(pinned);
         }
-        if (previous != null && previous.unreadCount != chat.unreadCount && chat.receiptState != null && chat.receiptState.inbox != null
-                && chat.receiptState.inbox.readThroughId > 0) {
+        if (chat.receiptState != null && chat.receiptState.inbox != null
+                && ((chat.isSavedChat()) || (previous != null && previous.unreadCount != chat.unreadCount
+                && chat.receiptState.inbox.readThroughId > 0))) {
             TL_update.TL_updateReadHistoryInbox inbox = new TL_update.TL_updateReadHistoryInbox();
             inbox.peer = FoxMesTL.peer(peer);
-            inbox.max_id = chat.receiptState.inbox.readThroughId;
+            inbox.max_id = chat.isSavedChat() ? chat.receiptState.inbox.savedHistoryReadId() : chat.receiptState.inbox.readThroughId;
             inbox.still_unread_count = chat.unreadCount;
             updates.add(inbox);
+            if (chat.isSavedChat()) {
+                TL_update.TL_updateReadHistoryOutbox outbox = new TL_update.TL_updateReadHistoryOutbox();
+                outbox.peer = FoxMesTL.peer(peer);
+                outbox.max_id = inbox.max_id;
+                updates.add(outbox);
+            }
         }
         return updates;
     }

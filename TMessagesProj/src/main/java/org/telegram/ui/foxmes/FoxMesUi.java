@@ -11,12 +11,15 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.SendMessagesHelper;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
+import org.telegram.messenger.foxmes.FoxMesChatRequests;
 import org.telegram.messenger.foxmes.FoxMesConfiguration;
 import org.telegram.messenger.foxmes.FoxMesRuntime;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBarMenuItem;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.Components.BulletinFactory;
+import org.telegram.ui.Components.Text;
+import org.telegram.ui.Components.UnreadCounterTextView;
 
 public final class FoxMesUi {
 
@@ -112,5 +115,113 @@ public final class FoxMesUi {
             SendMessagesHelper.getInstance(account).sendMessage(SendMessagesHelper.SendMessageParams.of(url, userId, null, null, null, true, null, null, null, true, 0, 0, null, false));
             openExternal(fragment.getParentActivity() != null ? fragment.getParentActivity() : fragment.getContext(), url);
         });
+    }
+
+    public static boolean applyChatRequestOverlay(int account, TLRPC.User user, UnreadCounterTextView view) {
+        FoxMesChatRequests.State state = FoxMesChatRequests.state(account, user);
+        String text;
+        switch (state.kind) {
+            case INCOMING:
+                text = "ACCEPT";
+                break;
+            case OUTGOING:
+                text = "REQUEST SENT";
+                break;
+            case DECLINED:
+                text = state.canRequest() ? "REQUEST CHAT" : "REQUEST DECLINED";
+                break;
+            default:
+                text = "REQUEST CHAT";
+                break;
+        }
+        view.setText(text);
+        view.setVisibility(android.view.View.VISIBLE);
+        return state.kind == FoxMesChatRequests.Kind.INCOMING || state.canRequest();
+    }
+
+    public static void chatRequestOverlayClicked(BaseFragment fragment, int account, TLRPC.User user) {
+        FoxMesChatRequests.State state = FoxMesChatRequests.state(account, user);
+        if (state.kind == FoxMesChatRequests.Kind.INCOMING) {
+            FoxMesChatRequests.answer(account, user, true, ok -> chatRequestFailed(fragment, ok));
+        } else if (state.canRequest()) {
+            FoxMesChatRequests.request(account, user, ok -> chatRequestFailed(fragment, ok));
+        } else if (state.kind == FoxMesChatRequests.Kind.OUTGOING) {
+            BulletinFactory.of(fragment).createSimpleBulletin(R.raw.contact_check, UserObject.getFirstName(user) + " will be able to chat with you after accepting the request.").show();
+        } else if (state.kind == FoxMesChatRequests.Kind.DECLINED) {
+            BulletinFactory.of(fragment).createSimpleBulletin(R.raw.error, "You can request a chat again on " + LocaleController.formatDateTime(state.retryAt, true) + ".").show();
+        }
+    }
+
+    public static boolean answerChatRequest(BaseFragment fragment, int account, TLRPC.User user, boolean accept) {
+        if (FoxMesChatRequests.state(account, user).kind != FoxMesChatRequests.Kind.INCOMING) {
+            return false;
+        }
+        FoxMesChatRequests.answer(account, user, accept, ok -> chatRequestFailed(fragment, ok));
+        return true;
+    }
+
+    public static void decorateChatRequestBar(int account, TLRPC.User user, android.widget.TextView accept, android.widget.TextView decline) {
+        if (FoxMesChatRequests.state(account, user).kind != FoxMesChatRequests.Kind.INCOMING) {
+            return;
+        }
+        if (accept != null) {
+            accept.setText("ACCEPT");
+        }
+        if (decline != null) {
+            decline.setText("DECLINE");
+        }
+    }
+
+    public static Text chatRequestFooter(int account, long dialogId) {
+        TLRPC.User user = dialogId > 0 ? org.telegram.messenger.MessagesController.getInstance(account).getUser(dialogId) : null;
+        FoxMesChatRequests.State state = FoxMesChatRequests.state(account, user);
+        if (user == null || !state.gated()) {
+            return null;
+        }
+        String name = UserObject.getFirstName(user);
+        String text;
+        switch (state.kind) {
+            case INCOMING:
+                text = name + " wants to chat with you. You haven't talked before — accept to start chatting or decline to hide this chat.";
+                break;
+            case OUTGOING:
+                text = "Chat request sent. You can write once " + name + " accepts it.";
+                break;
+            case DECLINED:
+                text = state.canRequest()
+                        ? name + " declined your chat request. You can send a new one."
+                        : name + " declined your chat request. You can try again on " + LocaleController.formatDateTime(state.retryAt, true) + ".";
+                break;
+            default:
+                text = "You haven't talked with " + name + " before. Send a chat request — you can write once it's accepted.";
+                break;
+        }
+        return new Text(text, 12)
+                .align(android.text.Layout.Alignment.ALIGN_CENTER)
+                .multiline(6)
+                .setMaxWidth(Math.min(AndroidUtilities.displaySize.x, AndroidUtilities.displaySize.y) * .6f);
+    }
+
+    /** Chat list text of a request chat without messages; null when there is no request. */
+    public static String chatRequestListPreview(int account, TLRPC.User user) {
+        if (user == null) {
+            return null;
+        }
+        switch (FoxMesChatRequests.state(account, user).kind) {
+            case INCOMING:
+                return "Wants to chat with you";
+            case OUTGOING:
+                return "Chat request sent";
+            case DECLINED:
+                return "Chat request declined";
+            default:
+                return null;
+        }
+    }
+
+    private static void chatRequestFailed(BaseFragment fragment, boolean ok) {
+        if (!ok && fragment != null && fragment.getParentActivity() != null) {
+            BulletinFactory.of(fragment).createSimpleBulletin(R.raw.error, "Couldn't send the request. Please try again.").show();
+        }
     }
 }

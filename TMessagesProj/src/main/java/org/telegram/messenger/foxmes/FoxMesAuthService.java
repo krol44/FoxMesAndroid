@@ -2,7 +2,7 @@ package org.telegram.messenger.foxmes;
 
 import android.os.Build;
 
-import org.telegram.messenger.foxmes.FoxMesModels.AuthExchange;
+import org.telegram.messenger.foxmes.FoxMesModels.AuthPoll;
 import org.telegram.messenger.foxmes.FoxMesModels.AuthStart;
 import org.telegram.messenger.foxmes.FoxMesModels.Me;
 
@@ -22,8 +22,8 @@ public final class FoxMesAuthService {
         return api.startDevice(deviceName());
     }
 
-    public AuthExchange exchange(String request, String code) throws IOException {
-        return api.exchangeDevice(request, code);
+    public AuthPoll poll(String request) throws IOException {
+        return api.pollDevice(request);
     }
 
     public Me restore(long userId) throws IOException {

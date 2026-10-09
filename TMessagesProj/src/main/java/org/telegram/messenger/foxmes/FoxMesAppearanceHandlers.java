@@ -38,6 +38,16 @@ final class FoxMesAppearanceHandlers {
             for (BackgroundIcon icon : FoxMesModels.list(catalog.emojis)) result.document_id.add(icon.id);
             r.reply(result);
         });
+        transport.on(FoxMesAppearanceRequest.class, FoxMesTransport.Lane.SERIAL, r -> {
+            FoxMesAppearanceRequest request = (FoxMesAppearanceRequest) r.request;
+            User confirmed = persist(runtime, request.body());
+            if (confirmed == null || confirmed.id != runtime.selfId() || !request.matches(confirmed.appearance)) {
+                r.fail(500, "APPEARANCE_SAVE_FAILED");
+                return;
+            }
+            apply(runtime, confirmed);
+            r.reply(FoxMesHandlers.boolTrue());
+        });
         transport.on(TL_account.updateColor.class, FoxMesTransport.Lane.SERIAL, r -> {
             TL_account.updateColor request = (TL_account.updateColor) r.request;
             User previous = runtime.knownUser(runtime.selfId());
@@ -54,15 +64,7 @@ final class FoxMesAppearanceHandlers {
             String operation = FoxMesJson.operationId();
             FoxMesJson.Body body = FoxMesJson.body().put("operation_id", operation).put(request.for_profile ? "profile" : "name", choice);
             try {
-                User confirmed;
-                try { confirmed = runtime.api.http.request("PATCH", "/me/appearance", null, body, User.class); }
-                catch (IOException failure) {
-                    if (failure instanceof FoxMesHttpException && !((FoxMesHttpException) failure).isTransient()) throw failure;
-                    AppearanceOperation journal = runtime.api.http.request("GET", "/operations/" + operation, null, null, AppearanceOperation.class);
-                    if ("done".equals(journal.status) && journal.result != null) confirmed = journal.result;
-                    else if ("unknown".equals(journal.status)) confirmed = runtime.api.http.request("PATCH", "/me/appearance", null, body, User.class);
-                    else throw failure;
-                }
+                User confirmed = persist(runtime, body);
                 apply(runtime, confirmed);
                 r.reply(FoxMesHandlers.boolTrue());
             } catch (IOException failure) {
@@ -72,6 +74,17 @@ final class FoxMesAppearanceHandlers {
                 AndroidUtilities.runOnUIThread(() -> Toast.makeText(ApplicationLoader.applicationContext, LocaleController.getString(R.string.ErrorOccurred), Toast.LENGTH_LONG).show());
             }
         });
+    }
+    private static User persist(FoxMesRuntime runtime, FoxMesJson.Body body) throws IOException {
+        try { return runtime.api.http.request("PATCH", "/me/appearance", null, body, User.class); }
+        catch (IOException failure) {
+            if (failure instanceof FoxMesHttpException && !((FoxMesHttpException) failure).isTransient()) throw failure;
+            String operation = body.toJson().get("operation_id").getAsString();
+            AppearanceOperation journal = runtime.api.http.request("GET", "/operations/" + operation, null, null, AppearanceOperation.class);
+            if ("done".equals(journal.status) && journal.result != null) return journal.result;
+            if ("unknown".equals(journal.status)) return runtime.api.http.request("PATCH", "/me/appearance", null, body, User.class);
+            throw failure;
+        }
     }
     private static void apply(FoxMesRuntime runtime, User source) {
         User current = runtime.knownUser(source.id);

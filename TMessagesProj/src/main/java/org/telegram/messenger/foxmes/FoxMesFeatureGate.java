@@ -22,10 +22,11 @@ public final class FoxMesFeatureGate {
     public static final boolean localMessageDeletion = false;
     public static final boolean nativeSizeLargeEmoji = true;
     public static final boolean contacts = false;
-    public static final boolean chatFolders = false;
+    public static final boolean chatFolders = true;
+    public static final boolean chatFolderSharing = false;
     public static final boolean premiumBadge = false;
     public static final boolean qrCodes = false;
-    public static final boolean profileEditing = false;
+    public static final boolean profileEditing = true;
     public static final boolean nativeBlocking = false;
     public static final boolean peerMoreMenu = false;
     public static final boolean publicPosts = false;
@@ -61,7 +62,15 @@ public final class FoxMesFeatureGate {
     }
 
     public static boolean hidesChatFolders() {
-        return enabled && !chatFolders;
+        return hidesChatFolders(org.telegram.messenger.UserConfig.selectedAccount);
+    }
+
+    public static boolean hidesChatFolders(int account) {
+        return enabled && (!chatFolders || !FoxMesFolders.supported(account));
+    }
+
+    public static boolean hidesChatFolderSharing() {
+        return enabled && !chatFolderSharing;
     }
 
     public static boolean hidesPremiumBadge() {

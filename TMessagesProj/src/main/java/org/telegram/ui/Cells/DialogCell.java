@@ -82,6 +82,8 @@ import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
+import org.telegram.messenger.foxmes.FoxMesFeatureGate;
+import org.telegram.ui.foxmes.FoxMesUi;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.utils.DrawableUtils;
@@ -1676,6 +1678,9 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                                 messageString = getString(parentFragment != null && parentFragment.isQuote ? R.string.SavedMessagesInfoQuote : R.string.SavedMessagesInfo);
                                 showChecks = false;
                                 drawTime = false;
+                            } else if (FoxMesFeatureGate.enabled && FoxMesUi.chatRequestListPreview(currentAccount, user) != null) {
+                                currentMessagePaint = Theme.dialogs_messagePrintingPaint[paintIndex];
+                                messageString = FoxMesUi.chatRequestListPreview(currentAccount, user);
                             } else {
                                 messageString = "";
                             }

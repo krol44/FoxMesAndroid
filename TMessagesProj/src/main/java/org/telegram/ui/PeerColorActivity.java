@@ -1994,6 +1994,16 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
     private boolean applyingName, applyingProfile;
     private boolean applying;
     private void apply() {
+        if (org.telegram.messenger.foxmes.FoxMesFeatureGate.enabled) {
+            org.telegram.ui.foxmes.FoxMesAppearanceEditor.apply(this, currentAccount, isChannel,
+                    namePage.selectedColor, namePage.selectedEmoji,
+                    profilePage.selectedColor, profilePage.selectedEmoji, this::applyNative);
+            return;
+        }
+        applyNative();
+    }
+
+    private void applyNative() {
         if (applying || !isChannel && !getUserConfig().isPremium()) {
             return;
         }

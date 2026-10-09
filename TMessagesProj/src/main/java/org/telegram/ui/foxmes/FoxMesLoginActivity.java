@@ -2,21 +2,14 @@ package org.telegram.ui.foxmes;
 
 import android.content.Context;
 import android.content.Intent;
-import android.graphics.Canvas;
-import android.graphics.Paint;
 import android.graphics.Typeface;
-import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
-import android.text.InputFilter;
-import android.text.InputType;
 import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.inputmethod.EditorInfo;
-import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -39,7 +32,11 @@ import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.MainTabsActivity;
 
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.List;
+import java.util.Locale;
+import java.util.TimeZone;
 
 public class FoxMesLoginActivity extends BaseFragment {
 
@@ -49,17 +46,27 @@ public class FoxMesLoginActivity extends BaseFragment {
     private final boolean addingAccount;
     private final FoxMesAuthService auth = new FoxMesAuthService();
 
-    private TextView beginButton;
+    private static final String DEFAULT_LINK = "foxtail.ing/fm";
+    private static final String COPY_CODE = "COPY CODE";
+    private static final String CODE_COPIED = "Code copied to clipboard.";
+    private static final String GETTING_CODE = "Getting a code…";
+    private static final String WAITING = "Waiting for confirmation in the browser…";
+    private static final String CODE_RENEWED = "The code has expired. Here is a new one.";
+    private static final String DECLINED = "The login was declined in the browser. Here is a new code.";
+    private static final String NO_CONNECTION = "No connection to FoxMes. Retrying…";
+    private static final String ALREADY_ADDED = "This account is already added. Here is a new code.";
+    private static final long MAX_START_DELAY_MS = 30000;
+
+    private TextView aboutLabel;
+    private TextView codeLabel;
+    private TextView openButton;
     private TextView copyButton;
-    private EditText codeField;
-    private TextView submitButton;
     private TextView statusLabel;
 
-    private String pendingRequest;
-    private String pendingUrl;
-    private boolean destroyed;
-    private boolean restoring;
-    private int requestGeneration;
+    private String verificationUrl;
+    private String userCode;
+    private volatile boolean destroyed;
+    private volatile int requestGeneration;
 
     public FoxMesLoginActivity() {
         this(-1);
@@ -130,68 +137,42 @@ public class FoxMesLoginActivity extends BaseFragment {
         header.addView(name, nameParams);
         column.addView(header, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, AndroidUtilities.dp(48)));
 
-        column.addView(new StepDivider(context, 1), dividerParams());
+        aboutLabel = new TextView(context);
+        aboutLabel.setText(aboutText(DEFAULT_LINK));
+        aboutLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        aboutLabel.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+        aboutLabel.setGravity(Gravity.CENTER_HORIZONTAL);
+        LinearLayout.LayoutParams aboutParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        aboutParams.topMargin = AndroidUtilities.dp(14);
+        column.addView(aboutLabel, aboutParams);
 
-        LinearLayout buttons = new LinearLayout(context);
-        buttons.setOrientation(LinearLayout.HORIZONTAL);
-        beginButton = secondaryButton(context, "GET CODE");
-        beginButton.setOnClickListener(v -> beginLogin());
-        copyButton = secondaryButton(context, "COPY AUTH URL");
-        copyButton.setOnClickListener(v -> copyAuthUrl());
-        LinearLayout.LayoutParams left = new LinearLayout.LayoutParams(0, AndroidUtilities.dp(46), 1f);
-        left.rightMargin = AndroidUtilities.dp(5);
-        LinearLayout.LayoutParams right = new LinearLayout.LayoutParams(0, AndroidUtilities.dp(46), 1f);
-        right.leftMargin = AndroidUtilities.dp(5);
-        buttons.addView(beginButton, left);
-        buttons.addView(copyButton, right);
-        LinearLayout.LayoutParams buttonsParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, AndroidUtilities.dp(46));
-        buttonsParams.topMargin = AndroidUtilities.dp(14);
-        column.addView(buttons, buttonsParams);
+        codeLabel = new TextView(context);
+        codeLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 40);
+        codeLabel.setTypeface(Typeface.create(Typeface.MONOSPACE, Typeface.BOLD));
+        codeLabel.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+        codeLabel.setGravity(Gravity.CENTER);
+        codeLabel.setOnClickListener(v -> copyCode());
+        column.addView(codeLabel, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, AndroidUtilities.dp(64)));
 
-        column.addView(new StepDivider(context, 2), dividerParams());
-
-        codeField = new EditText(context);
-        codeField.setHint("Code from foxtail.ing");
-        codeField.setHintTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteHintText));
-        codeField.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
-        codeField.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
-        codeField.setTypeface(Typeface.create(Typeface.MONOSPACE, Typeface.BOLD));
-        codeField.setGravity(Gravity.CENTER);
-        codeField.setInputType(InputType.TYPE_CLASS_NUMBER);
-        codeField.setFilters(new InputFilter[]{new InputFilter.LengthFilter(6)});
-        codeField.setImeOptions(EditorInfo.IME_ACTION_DONE);
-        codeField.setSingleLine(true);
-        if (android.os.Build.VERSION.SDK_INT >= 26) {
-            codeField.setAutofillHints(View.AUTOFILL_HINT_PASSWORD);
-        }
-        GradientDrawable border = new GradientDrawable();
-        border.setCornerRadius(AndroidUtilities.dp(10));
-        border.setStroke(Math.max(1, AndroidUtilities.dp(1)), Theme.getColor(Theme.key_divider));
-        border.setColor(0);
-        codeField.setBackground(border);
-        codeField.setOnEditorActionListener((v, actionId, event) -> {
-            if (actionId == EditorInfo.IME_ACTION_DONE) {
-                submit();
-                return true;
-            }
-            return false;
-        });
-        LinearLayout.LayoutParams fieldParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, AndroidUtilities.dp(52));
-        fieldParams.topMargin = AndroidUtilities.dp(14);
-        column.addView(codeField, fieldParams);
-
-        submitButton = new TextView(context);
-        submitButton.setText("Connect");
-        submitButton.setGravity(Gravity.CENTER);
-        submitButton.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17);
-        submitButton.setTypeface(AndroidUtilities.bold());
-        submitButton.setTextColor(Theme.getColor(Theme.key_featuredStickers_buttonText));
-        submitButton.setBackground(Theme.createSimpleSelectorRoundRectDrawable(AndroidUtilities.dp(10),
+        openButton = new TextView(context);
+        openButton.setGravity(Gravity.CENTER);
+        openButton.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17);
+        openButton.setTypeface(AndroidUtilities.bold());
+        openButton.setSingleLine(true);
+        openButton.setEllipsize(TextUtils.TruncateAt.END);
+        openButton.setTextColor(Theme.getColor(Theme.key_featuredStickers_buttonText));
+        openButton.setBackground(Theme.createSimpleSelectorRoundRectDrawable(AndroidUtilities.dp(10),
                 Theme.getColor(Theme.key_featuredStickers_addButton), Theme.getColor(Theme.key_featuredStickers_addButtonPressed)));
-        submitButton.setOnClickListener(v -> submit());
-        LinearLayout.LayoutParams submitParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, AndroidUtilities.dp(50));
-        submitParams.topMargin = AndroidUtilities.dp(12);
-        column.addView(submitButton, submitParams);
+        openButton.setOnClickListener(v -> openVerificationPage());
+        LinearLayout.LayoutParams openParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, AndroidUtilities.dp(50));
+        openParams.topMargin = AndroidUtilities.dp(8);
+        column.addView(openButton, openParams);
+
+        copyButton = secondaryButton(context, COPY_CODE);
+        copyButton.setOnClickListener(v -> copyCode());
+        LinearLayout.LayoutParams copyParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, AndroidUtilities.dp(46));
+        copyParams.topMargin = AndroidUtilities.dp(10);
+        column.addView(copyButton, copyParams);
 
         statusLabel = new TextView(context);
         statusLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
@@ -201,6 +182,7 @@ public class FoxMesLoginActivity extends BaseFragment {
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         statusParams.topMargin = AndroidUtilities.dp(18);
         column.addView(statusLabel, statusParams);
+        showCode(null, null, GETTING_CODE);
 
         if (addingAccount) {
             TextView cancel = new TextView(context);
@@ -218,16 +200,12 @@ public class FoxMesLoginActivity extends BaseFragment {
         }
 
         fragmentView = root;
-        if (!addingAccount) {
+        if (addingAccount) {
+            startLogin(null);
+        } else {
             restoreSession();
         }
         return fragmentView;
-    }
-
-    private LinearLayout.LayoutParams dividerParams() {
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, AndroidUtilities.dp(26));
-        params.topMargin = AndroidUtilities.dp(14);
-        return params;
     }
 
     private TextView secondaryButton(Context context, String text) {
@@ -245,53 +223,69 @@ public class FoxMesLoginActivity extends BaseFragment {
         return button;
     }
 
-    private static final class StepDivider extends View {
-        private final String number;
-        private final Paint linePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint badgePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private static String aboutText(String link) {
+        return "Open " + link + " in a browser where you are signed in to Foxtail, and enter this code:";
+    }
 
-        StepDivider(Context context, int number) {
-            super(context);
-            this.number = String.valueOf(number);
-            linePaint.setColor(Theme.getColor(Theme.key_divider));
-            linePaint.setStrokeWidth(Math.max(1, AndroidUtilities.dp(0.5f)));
-            badgePaint.setColor(Theme.getColor(Theme.key_featuredStickers_addButton));
-            textPaint.setColor(Theme.getColor(Theme.key_featuredStickers_buttonText));
-            textPaint.setTextSize(AndroidUtilities.dp(14));
-            textPaint.setTypeface(AndroidUtilities.bold());
-            textPaint.setTextAlign(Paint.Align.CENTER);
+    private static String linkLabel(String url) {
+        Uri uri = url != null ? Uri.parse(url) : null;
+        if (uri == null || TextUtils.isEmpty(uri.getHost())) {
+            return DEFAULT_LINK;
         }
+        String port = uri.getPort() > 0 ? ":" + uri.getPort() : "";
+        String path = uri.getPath() != null ? uri.getPath() : "";
+        return uri.getHost() + port + path;
+    }
 
-        @Override
-        protected void onDraw(Canvas canvas) {
-            float cx = getWidth() / 2f;
-            float cy = getHeight() / 2f;
-            float radius = AndroidUtilities.dp(13);
-            float skip = AndroidUtilities.dp(14);
-            canvas.drawLine(0, cy, cx - radius - skip, cy, linePaint);
-            canvas.drawLine(cx + radius + skip, cy, getWidth(), cy, linePaint);
-            canvas.drawCircle(cx, cy, radius, badgePaint);
-            Paint.FontMetrics metrics = textPaint.getFontMetrics();
-            canvas.drawText(number, cx, cy - (metrics.ascent + metrics.descent) / 2f, textPaint);
+    private static String grouped(String code) {
+        if (code.length() <= 3) {
+            return code;
+        }
+        int middle = code.length() / 2;
+        return code.substring(0, middle) + " " + code.substring(middle);
+    }
+
+    private static long parseExpiry(String value) {
+        if (value == null) {
+            return 0;
+        }
+        try {
+            SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US);
+            format.setTimeZone(TimeZone.getTimeZone("UTC"));
+            Date date = format.parse(value);
+            return date != null ? date.getTime() : 0;
+        } catch (Exception e) {
+            return 0;
         }
     }
 
+    private void showCode(String code, String url, String status) {
+        AndroidUtilities.runOnUIThread(() -> {
+            if (destroyed || statusLabel == null) {
+                return;
+            }
+            userCode = code;
+            verificationUrl = url;
+            String link = url != null ? linkLabel(url) : DEFAULT_LINK;
+            aboutLabel.setText(aboutText(link));
+            openButton.setText("Open " + link);
+            codeLabel.setText(code != null ? grouped(code) : "––– –––");
+            boolean ready = code != null;
+            for (View view : new View[]{codeLabel, openButton, copyButton}) {
+                view.setEnabled(ready);
+            }
+            openButton.setAlpha(ready ? 1f : 0.4f);
+            copyButton.setAlpha(ready ? 1f : 0.4f);
+            statusLabel.setText(status);
+        });
+    }
 
-    private void setStatus(String text, boolean busy) {
+    private void setStatus(String text) {
         AndroidUtilities.runOnUIThread(() -> {
             if (destroyed || statusLabel == null) {
                 return;
             }
             statusLabel.setText(text);
-            beginButton.setEnabled(!busy);
-            copyButton.setEnabled(!busy);
-            submitButton.setEnabled(!busy);
-            codeField.setEnabled(!busy);
-            float alpha = busy ? 0.4f : 1f;
-            beginButton.setAlpha(alpha);
-            copyButton.setAlpha(alpha);
-            submitButton.setAlpha(alpha);
         });
     }
 
@@ -307,12 +301,12 @@ public class FoxMesLoginActivity extends BaseFragment {
     private void restoreStoredSession() {
         List<Long> users = FoxMesTokenStore.knownUserIds();
         if (users.isEmpty()) {
+            startLogin(null);
             return;
         }
         final long userId = users.get(0);
         final int generation = ++requestGeneration;
-        restoring = true;
-        setStatus("Restoring the session…", true);
+        showCode(null, null, "Restoring the session…");
         Utilities.globalQueue.postRunnable(new Runnable() {
             long delay = 2000;
 
@@ -324,16 +318,14 @@ public class FoxMesLoginActivity extends BaseFragment {
                 try {
                     FoxMesModels.Me me = auth.restore(userId);
                     if (me == null) {
-                        restoring = false;
-                        setStatus("FoxMes authorization required.", false);
+                        AndroidUtilities.runOnUIThread(() -> startLogin(null));
                         return;
                     }
                     String token = FoxMesTokenStore.loadToken(userId);
                     AndroidUtilities.runOnUIThread(() -> completeAuthorization(me, token));
                 } catch (FoxMesHttpException e) {
                     if (e.isSessionRejected()) {
-                        restoring = false;
-                        setStatus("The session has expired. Please log in again.", false);
+                        AndroidUtilities.runOnUIThread(() -> startLogin("The session has expired. Please log in again."));
                         return;
                     }
                     retry();
@@ -343,109 +335,134 @@ public class FoxMesLoginActivity extends BaseFragment {
             }
 
             private void retry() {
-                setStatus("No connection to FoxMes. Retrying…", false);
+                setStatus(NO_CONNECTION);
                 Utilities.globalQueue.postRunnable(this, delay);
                 delay = Math.min(delay * 2, 30000);
             }
         });
     }
 
-    private void requestPairing(Utilities.Callback<String> then) {
+    private void startLogin(String status) {
+        if (destroyed) {
+            return;
+        }
         final int generation = ++requestGeneration;
-        restoring = false;
-        setStatus("Creating the login request…", true);
-        Utilities.globalQueue.postRunnable(() -> {
-            try {
-                FoxMesModels.AuthStart start = auth.begin();
-                String url = FoxMesConfiguration.pairingURL(start.request, start.url);
-                AndroidUtilities.runOnUIThread(() -> {
-                    if (destroyed || generation != requestGeneration) {
-                        return;
-                    }
-                    pendingRequest = start.request;
-                    pendingUrl = url;
-                    codeField.setText("");
-                    setStatus("Confirm the login in the browser, then enter the code.", false);
-                    then.run(url);
-                });
-            } catch (Exception e) {
-                setStatus("Could not start the login: " + describe(e), false);
+        showCode(null, null, status != null ? status : GETTING_CODE);
+        Utilities.globalQueue.postRunnable(() -> requestCode(generation, status, 2000));
+    }
+
+    private boolean stale(int generation) {
+        return destroyed || generation != requestGeneration;
+    }
+
+    private void requestCode(int generation, String status, long retryDelay) {
+        if (stale(generation)) {
+            return;
+        }
+        try {
+            FoxMesModels.AuthStart start = auth.begin();
+            if (start == null || TextUtils.isEmpty(start.request) || TextUtils.isEmpty(start.userCode)) {
+                throw new IllegalStateException("invalid device start response");
+            }
+            String url = FoxMesConfiguration.verificationURL(start.verificationUrl);
+            long expiresAt = parseExpiry(start.expiresAt);
+            int interval = Math.max(start.interval, 1);
+            showCode(start.userCode, url, status != null ? status : WAITING);
+            schedulePoll(generation, start.request, expiresAt, interval);
+        } catch (Exception e) {
+            if (!(e instanceof FoxMesHttpException) || ((FoxMesHttpException) e).status != 429) {
+                setStatus(NO_CONNECTION);
+            }
+            long next = Math.min(retryDelay * 2, MAX_START_DELAY_MS);
+            Utilities.globalQueue.postRunnable(() -> requestCode(generation, status, next), retryDelay);
+        }
+    }
+
+    private void schedulePoll(int generation, String request, long expiresAt, int interval) {
+        Utilities.globalQueue.postRunnable(() -> poll(generation, request, expiresAt, interval), interval * 1000L);
+    }
+
+    private void renew(int generation, String status) {
+        AndroidUtilities.runOnUIThread(() -> {
+            if (!stale(generation)) {
+                startLogin(status);
             }
         });
     }
 
-    private void beginLogin() {
-        requestPairing(url -> {
-            try {
-                Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                getParentActivity().startActivity(intent);
-            } catch (Exception e) {
-                setStatus("Could not open the browser. Copy the auth url instead.", false);
-            }
-        });
-    }
-
-    private void copyAuthUrl() {
-        if (pendingUrl != null) {
-            copy(pendingUrl);
+    private void poll(int generation, String request, long expiresAt, int interval) {
+        if (stale(generation)) {
             return;
         }
-        requestPairing(this::copy);
-    }
-
-    private void copy(String url) {
-        AndroidUtilities.addToClipboard(url);
-        setStatus("Auth url copied to clipboard.", false);
-    }
-
-    private void submit() {
-        String code = codeField.getText() != null ? codeField.getText().toString().trim() : "";
-        final String request = pendingRequest;
-        if (request == null) {
-            setStatus("Preparing the connection. Try again in a moment.", false);
+        if (expiresAt > 0 && System.currentTimeMillis() >= expiresAt) {
+            renew(generation, CODE_RENEWED);
             return;
         }
-        if (code.length() != 6) {
-            setStatus("Enter the code from foxtail.ing.", false);
-            return;
-        }
-        AndroidUtilities.hideKeyboard(codeField);
-        setStatus("Checking the code…", true);
-        final int generation = ++requestGeneration;
-        Utilities.globalQueue.postRunnable(() -> {
-            try {
-                FoxMesModels.AuthExchange exchange = auth.exchange(request, code);
-                FoxMesModels.Me me = auth.me(exchange.accessToken);
+        try {
+            FoxMesModels.AuthPoll result = auth.poll(request);
+            if (result != null && result.accessToken != null && result.user != null) {
+                FoxMesModels.Me me = auth.me(result.accessToken);
                 AndroidUtilities.runOnUIThread(() -> {
-                    if (destroyed || generation != requestGeneration) {
+                    if (stale(generation)) {
                         return;
                     }
                     if (FoxMesSession.isSignedIn(me.id)) {
-                        setStatus("This account is already added.", false);
+                        startLogin(ALREADY_ADDED);
                         return;
                     }
-                    completeAuthorization(me, exchange.accessToken);
+                    completeAuthorization(me, result.accessToken);
                 });
-            } catch (Exception e) {
-                setStatus("The code was rejected: " + describe(e), false);
+                return;
             }
-        });
+            int next = result != null && result.interval != null ? Math.max(result.interval, 1) : interval;
+            setStatus(WAITING);
+            schedulePoll(generation, request, expiresAt, next);
+        } catch (FoxMesHttpException e) {
+            if (e.status == 403) {
+                renew(generation, DECLINED);
+                return;
+            }
+            if (e.status == 410) {
+                renew(generation, CODE_RENEWED);
+                return;
+            }
+            if (e.status != 429) {
+                setStatus(NO_CONNECTION);
+            }
+            schedulePoll(generation, request, expiresAt, interval);
+        } catch (Exception e) {
+            setStatus(NO_CONNECTION);
+            schedulePoll(generation, request, expiresAt, interval);
+        }
     }
 
-    private static String describe(Exception e) {
-        if (e instanceof FoxMesHttpException) {
-            FoxMesHttpException http = (FoxMesHttpException) e;
-            return http.serverMessage != null ? http.serverMessage : (http.code != null ? http.code : "HTTP " + http.status);
+    private void openVerificationPage() {
+        if (verificationUrl == null) {
+            return;
         }
-        return e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+        try {
+            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(verificationUrl));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getParentActivity().startActivity(intent);
+        } catch (Exception e) {
+            setStatus("Could not open the browser. Open " + linkLabel(verificationUrl) + " manually.");
+        }
+    }
+
+    private void copyCode() {
+        if (userCode == null) {
+            return;
+        }
+        AndroidUtilities.addToClipboard(userCode);
+        setStatus(CODE_COPIED);
     }
 
     private void completeAuthorization(FoxMesModels.User user, String token) {
         if (destroyed || token == null) {
             return;
         }
-        setStatus("Done. Loading FoxMes…", true);
+        ++requestGeneration;
+        showCode(null, null, "Done. Loading FoxMes…");
         FoxMesSession.activate(currentAccount, user, token);
         openChats();
     }

@@ -1153,6 +1153,10 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 						};
 						AndroidUtilities.runOnUIThread(timeoutRunnable, MessagesController.getInstance(currentAccount).callReceiveTimeout);
 					} else {
+						if (FoxMesFeatureGate.enabled) {
+							org.telegram.messenger.foxmes.FoxMesCallErrors.failRequest(error12, this::callFailed);
+							return;
+						}
 						if (error12.code == 400 && "PARTICIPANT_VERSION_OUTDATED".equals(error12.text)) {
 							callFailed(Instance.ERROR_PEER_OUTDATED);
 						} else if (error12.code == 403) {

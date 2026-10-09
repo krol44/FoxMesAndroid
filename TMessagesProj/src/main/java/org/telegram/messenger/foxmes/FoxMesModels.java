@@ -18,6 +18,18 @@ public final class FoxMesModels {
         return value != null ? value : Collections.emptyList();
     }
 
+    public static class StickerFavoritesState {
+        @SerializedName("emoji_ids") public List<Integer> emojiIds;
+        public Long revision;
+        public int limit;
+        boolean valid() {
+            if (revision == null || revision < 0 || limit != FoxMesStickerFavorites.LIMIT || emojiIds == null || emojiIds.size() > limit) return false;
+            java.util.HashSet<Integer> ids = new java.util.HashSet<>();
+            for (Integer id : emojiIds) if (id == null || id <= 0 || !ids.add(id)) return false;
+            return true;
+        }
+    }
+
     public static final String CAPABILITY_EPHEMERAL_MEDIA = "ephemeral-media-v1";
 
     public static class User {
@@ -29,8 +41,11 @@ public final class FoxMesModels {
         public String avatarUrl;
         @SerializedName("avatar_id")
         public String avatarId;
+        @SerializedName("current_profile_photo_id") public String currentProfilePhotoId;
+        @SerializedName("photos_revision") public Long photosRevision;
         // Present only on payloads built for this account; null means "not stated".
         public Boolean blocked;
+        @SerializedName("is_contact") public Boolean isContact;
         @SerializedName("contact_name")
         public String contactName;
         @SerializedName("contact_photo_url")
@@ -40,6 +55,22 @@ public final class FoxMesModels {
         @SerializedName("contact_note")
         public String contactNote;
         @SerializedName("peer_appearance") public PeerAppearance appearance;
+        @SerializedName("registered_at") public String registeredAt;
+    }
+
+    public static class ChatRequest {
+        public String status;
+        @SerializedName("requester_id") public long requesterId;
+        @SerializedName("recipient_id") public long recipientId;
+        public String date;
+        @SerializedName("retry_at") public String retryAt;
+    }
+
+    public static class ChatRequestResult {
+        @SerializedName("chat_id") public long chatId;
+        @SerializedName("user_id") public long userId;
+        public ChatRequest request;
+        public boolean hidden;
     }
 
     public static class PeerAppearance {
@@ -60,6 +91,7 @@ public final class FoxMesModels {
     public static class AppearanceOperation { public String status; public User result; }
 
     public static class Me extends User {
+        public FoxMesFolders.Capabilities folders;
         @SerializedName("event_seq")
         public Long eventSeq;
         public List<String> capabilities;
@@ -298,6 +330,7 @@ public final class FoxMesModels {
         public ForwardedFrom forwardedFrom;
         public Location location;
         public CallInfo call;
+        public FoxMesChatAppearance.Action action;
         public Ephemeral ephemeral;
 
         public String text() {
@@ -337,6 +370,14 @@ public final class FoxMesModels {
         public int unreadCount;
         @SerializedName("state_revision")
         public long stateRevision;
+        @SerializedName("first_unread_id")
+        public Integer firstUnreadId;
+
+        // A native history position, separate from the server's human-read watermark.
+        public int savedHistoryReadId() {
+            return unreadCount > 0 && firstUnreadId != null && firstUnreadId > 0
+                    ? Math.max(readThroughId, firstUnreadId - 1) : readThroughId;
+        }
     }
 
     public static class ReceiptState {
@@ -399,6 +440,10 @@ public final class FoxMesModels {
         public User peer;
         @SerializedName("notification_settings")
         public NotificationSettings notificationSettings;
+        public FoxMesChatAppearance.Appearance appearance;
+        public FoxMesChatAppearance.WallpaperState wallpaper;
+        @SerializedName("theme_emoticon") public String themeEmoticon;
+        public ChatRequest request;
 
         public List<Long> memberIds() {
             return list(memberIds);
@@ -432,12 +477,18 @@ public final class FoxMesModels {
 
     public static class AuthStart {
         public String request;
-        public String url;
+        @SerializedName("user_code")
+        public String userCode;
+        @SerializedName("verification_url")
+        public String verificationUrl;
         @SerializedName("expires_at")
         public String expiresAt;
+        public int interval;
     }
 
-    public static class AuthExchange {
+    public static class AuthPoll {
+        public String status;
+        public Integer interval;
         @SerializedName("access_token")
         public String accessToken;
         @SerializedName("token_type")

@@ -149,6 +149,11 @@ public final class FoxMesTL {
         boolean self = source.id == context.selfId();
         user.self = self;
         user.premium = self;
+        user.contact = Boolean.TRUE.equals(source.isContact);
+        if (source.isContact == null && context instanceof FoxMesRuntime) {
+            TLRPC.User cached = org.telegram.messenger.MessagesController.getInstance(((FoxMesRuntime) context).account).getUser(source.id);
+            if (cached != null) user.contact = cached.contact;
+        }
         user.flags = TLObject.setFlag(user.flags, FLAG_0, true);
         user.access_hash = accessHash(source.id);
         String username = TextUtils.isEmpty(source.username) ? null : source.username;
@@ -195,6 +200,10 @@ public final class FoxMesTL {
     }
 
     public static long avatarPhotoId(User source) {
+        if (!TextUtils.isEmpty(source.currentProfilePhotoId)) {
+            try { long id = Long.parseLong(source.currentProfilePhotoId); if (id > 0) return id; }
+            catch (NumberFormatException ignored) {}
+        }
         String key = !TextUtils.isEmpty(source.avatarId) ? source.avatarId : FoxMesHttp.absolute(source.avatarUrl);
         return positiveHash("avatar:" + key);
     }
@@ -393,6 +402,12 @@ public final class FoxMesTL {
             peerUser = source.senderId != self ? source.senderId : self;
         }
         boolean out = source.senderId == self;
+        if (source.action != null && context instanceof FoxMesRuntime) {
+            TLRPC.MessageAction action = FoxMesChatAppearance.action((FoxMesRuntime) context, source.action);
+            if (action != null) {
+                TLRPC.TL_messageService service = new TLRPC.TL_messageService();service.id = source.id;service.out = out;service.from_id = peer(source.senderId);service.flags = TLObject.setFlag(service.flags, FLAG_8, true);service.peer_id = peer(peerUser);service.date = FoxMesJson.unixTimeOrNow(source.createdAt);service.action = action;service.dialog_id = peerUser;return service;
+            }
+        }
         CallInfo call = source.call;
         if (call != null) {
             TLRPC.MessageAction action = callAction(call);
@@ -942,6 +957,14 @@ public final class FoxMesTL {
         return source != null && (!TextUtils.isEmpty(source.text) || source.replyToId > 0);
     }
 
+    public static TLRPC.TL_dialog emptyDialog(long peerUserId) {
+        TLRPC.TL_dialog dialog = new TLRPC.TL_dialog();
+        dialog.peer = peer(peerUserId);
+        dialog.id = peerUserId;
+        dialog.notify_settings = new TLRPC.TL_peerNotifySettings();
+        return dialog;
+    }
+
     public static TLRPC.TL_dialog dialog(Chat chat, long peerUserId, int topMessage) {
         TLRPC.TL_dialog dialog = new TLRPC.TL_dialog();
         dialog.peer = peer(peerUserId);
@@ -950,8 +973,12 @@ public final class FoxMesTL {
         int maxKnown = topMessage;
         Integer inbox = chat.receiptState != null && chat.receiptState.inbox != null ? chat.receiptState.inbox.readThroughId : null;
         Integer outbox = chat.receiptState != null && chat.receiptState.outbox != null ? chat.receiptState.outbox.readThroughId : null;
-        dialog.read_inbox_max_id = inbox != null && inbox > 0 ? inbox : (chat.unreadCount == 0 ? maxKnown : 0);
-        dialog.read_outbox_max_id = outbox != null && outbox > 0 ? outbox : 0;
+        dialog.read_inbox_max_id = inbox != null ? inbox : (chat.unreadCount == 0 ? maxKnown : 0);
+        dialog.read_outbox_max_id = outbox != null ? outbox : 0;
+        if (chat.isSavedChat() && chat.receiptState != null && chat.receiptState.inbox != null) {
+            dialog.read_inbox_max_id = chat.receiptState.inbox.savedHistoryReadId();
+            dialog.read_outbox_max_id = dialog.read_inbox_max_id;
+        }
         dialog.unread_count = Math.max(0, chat.unreadCount);
         dialog.unread_mark = chat.markedUnread;
         dialog.pinned = chat.pinned;

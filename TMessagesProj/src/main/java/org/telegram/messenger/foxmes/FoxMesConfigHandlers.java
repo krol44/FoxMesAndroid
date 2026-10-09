@@ -25,7 +25,7 @@ final class FoxMesConfigHandlers {
             int pts = ((TLRPC.TL_updates_getDifference) r.request).pts;
             r.replyLate(() -> runtime.updates.difference(pts));
         });
-        transport.on(TLRPC.TL_help_getAppConfig.class, FoxMesTransport.Lane.INLINE, r -> r.reply(appConfig()));
+        transport.on(TLRPC.TL_help_getAppConfig.class, FoxMesTransport.Lane.INLINE, r -> r.reply(appConfig(runtime.account)));
 
         transport.on(TL_account.getNotifySettings.class, FoxMesTransport.Lane.IO, r -> {
             TL_account.getNotifySettings req = (TL_account.getNotifySettings) r.request;
@@ -83,8 +83,6 @@ final class FoxMesConfigHandlers {
             r.reply(contacts);
         });
         transport.on(TLRPC.TL_contacts_getStatuses.class, FoxMesTransport.Lane.INLINE, r -> r.reply(new Vector<>(TLRPC.TL_contactStatus::TLdeserialize)));
-        transport.on(TLRPC.TL_messages_getDialogFilters.class, FoxMesTransport.Lane.INLINE, r -> r.reply(new TLRPC.TL_messages_dialogFilters()));
-        transport.on(TLRPC.TL_messages_getSuggestedDialogFilters.class, FoxMesTransport.Lane.INLINE, r -> r.reply(new Vector<>(TLRPC.TL_dialogFilterSuggested::TLdeserialize)));
         transport.on(TLRPC.TL_messages_getDialogUnreadMarks.class, FoxMesTransport.Lane.INLINE, r -> r.reply(new Vector<>(TLRPC.DialogPeer::TLdeserialize)));
         transport.on(TLRPC.TL_messages_getDefaultHistoryTTL.class, FoxMesTransport.Lane.INLINE, r -> {
             TLRPC.TL_defaultHistoryTTL ttl = new TLRPC.TL_defaultHistoryTTL();
@@ -110,8 +108,11 @@ final class FoxMesConfigHandlers {
             r.reply(stories);
         });
         transport.on(TLRPC.TL_messages_getPeerSettings.class, FoxMesTransport.Lane.INLINE, r -> {
+            TLRPC.TL_messages_getPeerSettings req = (TLRPC.TL_messages_getPeerSettings) r.request;
             TLRPC.TL_messages_peerSettings settings = new TLRPC.TL_messages_peerSettings();
-            settings.settings = new TLRPC.TL_peerSettings();
+            settings.settings = req.peer instanceof TLRPC.TL_inputPeerUser
+                    ? FoxMesChatRequests.peerSettings(runtime, req.peer.user_id, null)
+                    : new TLRPC.TL_peerSettings();
             r.reply(settings);
         });
         transport.on(TLRPC.TL_auth_logOut.class, FoxMesTransport.Lane.INLINE, r -> {
@@ -134,11 +135,18 @@ final class FoxMesConfigHandlers {
         return settings;
     }
 
-    static TLRPC.TL_help_appConfig appConfig() {
+    static TLRPC.TL_help_appConfig appConfig(int account) {
         TLRPC.TL_jsonObject config = new TLRPC.TL_jsonObject();
+        put(config, "stickers_faved_limit_default", number(FoxMesStickerFavorites.LIMIT));
+        put(config, "stickers_faved_limit_premium", number(FoxMesStickerFavorites.LIMIT));
         put(config, "stories_posting", string("disabled"));
         put(config, "premium_purchase_blocked", bool(true));
-        put(config, "dialog_filters_enabled", bool(false));
+        put(config, "dialog_filters_enabled", bool(FoxMesFolders.supported(account)));
+        for (String suffix : new String[]{"default", "premium"}) {
+            put(config, "dialog_filters_limit_" + suffix, number(FoxMesFolders.LIMIT));
+            put(config, "dialog_filters_chats_limit_" + suffix, number(FoxMesFolders.CHATS_LIMIT));
+            put(config, "dialog_filters_pinned_limit_" + suffix, number(FoxMesFolders.CHATS_LIMIT));
+        }
         put(config, "stars_purchase_blocked", bool(true));
         put(config, "stargifts_blocked", bool(true));
         put(config, "stars_gifts_enabled", bool(false));
@@ -151,7 +159,7 @@ final class FoxMesConfigHandlers {
         put(config, "translations_auto_enabled", string("disabled"));
         put(config, "gif_search_emojies", new TLRPC.TL_jsonArray());
         TLRPC.TL_help_appConfig result = new TLRPC.TL_help_appConfig();
-        result.hash = 0x0F0E5E77;
+        result.hash = FoxMesFolders.supported(account) ? 0x464F4C44 : 0x464F4C43;
         result.config = config;
         return result;
     }
@@ -161,6 +169,12 @@ final class FoxMesConfigHandlers {
         entry.key = key;
         entry.value = value;
         object.value.add(entry);
+    }
+
+    private static TLRPC.TL_jsonNumber number(int value) {
+        TLRPC.TL_jsonNumber result = new TLRPC.TL_jsonNumber();
+        result.value = value;
+        return result;
     }
 
     private static TLRPC.TL_jsonString string(String value) {

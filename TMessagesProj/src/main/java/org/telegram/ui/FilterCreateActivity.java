@@ -221,12 +221,16 @@ public class FilterCreateActivity extends BaseFragment {
 
     @Override
     public boolean onFragmentCreate() {
+        if (org.telegram.messenger.foxmes.FoxMesFeatureGate.enabled) {
+            org.telegram.messenger.foxmes.FoxMesFolders.beginEdit(currentAccount, filter);
+        }
         updateRows();
         return super.onFragmentCreate();
     }
 
     private boolean loadingInvites;
     public void loadInvites() {
+        if (org.telegram.messenger.foxmes.FoxMesFeatureGate.hidesChatFolderSharing()) return;
         if (loadingInvites) {
             return;
         }
@@ -357,12 +361,13 @@ public class FilterCreateActivity extends BaseFragment {
             items.add(ItemInner.asShadow(LocaleController.getString(R.string.FilterExcludeInfo)));
         }
 
-        if (getMessagesController().folderTags || !getUserConfig().isPremium()) {
+        if (org.telegram.messenger.foxmes.FoxMesFeatureGate.enabled || getMessagesController().folderTags || !getUserConfig().isPremium()) {
             items.add(new ItemInner(VIEW_TYPE_HEADER_COLOR_PREVIEW, false));
             items.add(new ItemInner(VIEW_TYPE_COLOR, false));
             items.add(ItemInner.asShadow(LocaleController.getString(R.string.FolderTagColorInfo)));
         }
 
+        if (!org.telegram.messenger.foxmes.FoxMesFeatureGate.hidesChatFolderSharing()) {
         if (invites.isEmpty()) {
             items.add(ItemInner.asHeader(LocaleController.getString(R.string.FilterShareFolder), true));
             items.add(ItemInner.asButton(R.drawable.msg2_link2, LocaleController.getString(R.string.FilterShareFolderButton), false));
@@ -378,6 +383,8 @@ public class FilterCreateActivity extends BaseFragment {
                     LocaleController.getString(R.string.FilterInviteLinksHintNew) :
                     LocaleController.getString(R.string.FilterInviteLinksHint)
             ));
+        }
+
         }
 
         if (!creatingNew) {
@@ -1213,6 +1220,9 @@ public class FilterCreateActivity extends BaseFragment {
                     }
                 }
             }
+        }
+        if (org.telegram.messenger.foxmes.FoxMesFeatureGate.enabled) {
+            org.telegram.messenger.foxmes.FoxMesFolders.prepareEdit(fragment.getCurrentAccount(), filter, req);
         }
         fragment.getConnectionsManager().sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
             if (progress) {
@@ -2378,6 +2388,7 @@ public class FilterCreateActivity extends BaseFragment {
     public static class FilterInvitesBottomSheet extends BottomSheetWithRecyclerListView {
 
         public static void show(BaseFragment fragment, MessagesController.DialogFilter filter, Runnable onLoaded) {
+            if (org.telegram.messenger.foxmes.FoxMesFeatureGate.hidesChatFolderSharing()) return;
             long start = System.currentTimeMillis();
             TL_chatlists.TL_chatlists_getExportedInvites req = new TL_chatlists.TL_chatlists_getExportedInvites();
             req.chatlist = new TL_chatlists.TL_inputChatlistDialogFilter();

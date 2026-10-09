@@ -163,7 +163,7 @@ public final class FoxMesConfiguration {
         return trimTrailingSlashes(webURL()) + "/" + path;
     }
 
-    public static String pairingURL(String request, String serverURL) {
+    public static String verificationURL(String serverURL) {
         if (!BuildVars.DEBUG_VERSION || !isDevelopmentEndpoint()) {
             return serverURL;
         }
@@ -174,22 +174,7 @@ public final class FoxMesConfiguration {
         if (web == null) {
             return serverURL;
         }
-        Uri uri = Uri.parse(web);
-        Uri.Builder builder = uri.buildUpon();
-        String path = uri.getPath();
-        if (path == null || path.isEmpty() || path.equals("/")) {
-            builder.path("/settings/foxMes");
-        }
-        builder.clearQuery();
-        for (String name : uri.getQueryParameterNames()) {
-            if (!"request".equals(name)) {
-                for (String value : uri.getQueryParameters(name)) {
-                    builder.appendQueryParameter(name, value);
-                }
-            }
-        }
-        builder.appendQueryParameter("request", request);
-        return builder.build().toString();
+        return Uri.parse(web).buildUpon().path("/fm").clearQuery().build().toString();
     }
 
     public static Uri normalizedIncomingUri(Uri uri) {

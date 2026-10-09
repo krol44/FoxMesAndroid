@@ -264,6 +264,12 @@ public class ReactionsDoubleTapManageActivity extends BaseFragment implements No
 
     private SelectAnimatedEmojiDialog.SelectAnimatedEmojiDialogWindow selectAnimatedEmojiDialog;
     public void showSelectStatusDialog(SetDefaultReactionCell cell) {
+        if (org.telegram.messenger.foxmes.FoxMesFeatureGate.enabled) {
+            org.telegram.ui.foxmes.FoxMesDefaultReactionPicker.show(this, currentAccount, cell,
+                cell == null ? null : cell.imageDrawable, () -> { if (cell != null) cell.update(true); },
+                selectAnimatedEmojiDialog, value -> selectAnimatedEmojiDialog = value);
+            return;
+        }
         if (selectAnimatedEmojiDialog != null) {
             return;
         }

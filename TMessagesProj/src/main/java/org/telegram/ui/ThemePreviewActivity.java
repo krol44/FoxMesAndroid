@@ -2705,6 +2705,15 @@ public class ThemePreviewActivity extends BaseFragment implements DownloadContro
             }
         }
         wallpaperInfo.forBoth = forBoth;
+        if (org.telegram.messenger.foxmes.FoxMesFeatureGate.enabled && dialogId != 0 && path != null) {
+            org.telegram.messenger.foxmes.FoxMesChatAppearance.savePeerWallpaper(currentAccount, path, wallpaperInfo, () -> {
+                setupFinished = true;
+                TLRPC.UserFull full = getMessagesController().getUserFull(dialogId);
+                if (delegate != null) delegate.didSetNewBackground(full != null ? full.wallpaper : null);
+                finishFragment();
+            });
+            return;
+        }
         MessagesController.getInstance(currentAccount).saveWallpaperToServer(path, wallpaperInfo, slug != null && dialogId == 0, 0);
 
         boolean needFinishFragment = true;

@@ -424,7 +424,7 @@ public class FiltersSetupActivity extends BaseFragment implements NotificationCe
                 lastColor = color;
             }
 
-            shareImageView.setVisibility(filter.isChatlist() ? VISIBLE : GONE);
+            shareImageView.setVisibility(filter.isChatlist() && !org.telegram.messenger.foxmes.FoxMesFeatureGate.hidesChatFolderSharing() ? VISIBLE : GONE);
 
             StringBuilder info = new StringBuilder();
             if (filter.isDefault() || (filter.flags & MessagesController.DIALOG_FILTER_FLAG_ALL_CHATS) == MessagesController.DIALOG_FILTER_FLAG_ALL_CHATS) {

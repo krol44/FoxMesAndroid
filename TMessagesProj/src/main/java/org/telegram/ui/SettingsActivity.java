@@ -391,7 +391,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         contentView.addView(actionBarBackground, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 200, Gravity.TOP));
         contentView.addView(actionBar, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.FILL_HORIZONTAL | Gravity.TOP));
 
-        imageUpdater = new ImageUpdater(true, ImageUpdater.FOR_TYPE_USER, true);
+        imageUpdater = new ImageUpdater(!FoxMesFeatureGate.enabled, ImageUpdater.FOR_TYPE_USER, !FoxMesFeatureGate.enabled);
         imageUpdater.setOpenWithFrontfaceCamera(true);
         imageUpdater.parentFragment = this;
         imageUpdater.setDelegate(this);
@@ -710,7 +710,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         }
         items.add(SettingCell.Factory.of(5, IconBackgroundColors.RED.top, IconBackgroundColors.RED.bottom, R.drawable.settings_sounds, getString(R.string.SettingsNotifications), getString(R.string.SettingsNotificationsInfo)));
         items.add(SettingCell.Factory.of(6, IconBackgroundColors.BLUE_DEEP.top, IconBackgroundColors.BLUE_DEEP.bottom, R.drawable.settings_data, getString(R.string.SettingsData), getString(R.string.SettingsDataInfo)));
-        if (!FoxMesFeatureGate.hidesChatFolders()) {
+        if (!FoxMesFeatureGate.hidesChatFolders(currentAccount)) {
             items.add(SettingCell.Factory.of(7, IconBackgroundColors.BLUE_ALT.top, IconBackgroundColors.BLUE_ALT.bottom, R.drawable.settings_folders, getString(R.string.SettingsFolders), getString(R.string.SettingsFoldersInfo)));
         }
         if (!FoxMesFeatureGate.hidesDevices()) {
@@ -837,7 +837,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         }
         switch (item.id) {
             case 1:
-                if (FoxMesFeatureGate.hidesProfileEditing()) {
+                if (FoxMesFeatureGate.enabled) {
                     FoxMesUi.openProfileSettings(getParentActivity(), currentAccount);
                     break;
                 }

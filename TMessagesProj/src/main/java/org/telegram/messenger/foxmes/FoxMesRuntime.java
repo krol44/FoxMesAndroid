@@ -87,6 +87,7 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
     private volatile Set<Integer> catalogIds = Collections.emptySet();
     private volatile Snapshot snapshot;
     private volatile boolean started;
+    private volatile FoxMesStickerFavorites stickerFavorites;
     private volatile long sessionUserId;
     private volatile boolean realtimePaused;
     private volatile long lastRealtimeAt;
@@ -201,12 +202,19 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
         start();
     }
 
+    synchronized FoxMesStickerFavorites stickerFavorites() {
+        if (stickerFavorites != null && !stickerFavorites.active()) { stickerFavorites.stop(); stickerFavorites = null; }
+        if (stickerFavorites == null) stickerFavorites = new FoxMesStickerFavorites(this);
+        return stickerFavorites;
+    }
+
     public synchronized void start() {
         if (started) {
             return;
         }
         started = true;
         sessionUserId = selfId();
+        stickerFavorites().refresh(false);
         handlingUnauthorized.set(false);
         setConnectionState(ConnectionsManager.ConnectionStateConnecting);
         tick = timer.scheduleAtFixedRate(() -> {
@@ -220,7 +228,10 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
         if (seq > 0) {
             socket.start(seq);
         }
-        serial.execute(this::refreshCatalogQuietly);
+        serial.execute(() -> {
+            refreshCatalogQuietly();
+            FoxMesChatAppearance.refreshThemes(this);
+        });
         FoxMesAppState.watch();
         TL_update.TL_updatePinnedDialogs pinned = new TL_update.TL_updatePinnedDialogs();
         pinned.folder_id = 0;
@@ -286,6 +297,7 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
 
     public synchronized void stop() {
         started = false;
+        if (stickerFavorites != null) { stickerFavorites.stop(); stickerFavorites = null; }
         realtimePaused = false;
         if (tick != null) {
             tick.cancel(false);
@@ -381,6 +393,7 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
             return;
         }
         lastGapResume = resume;
+        stickerFavorites().refresh(true);
         store().putLong("event_seq", Math.max(0, resume - 1));
         snapshot = null;
         Utilities.stageQueue.postRunnable(() -> {
@@ -492,7 +505,8 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
         if (current == null) {
             current = api.me();
             me = current;
-            users.put(current.id, current);
+            rememberUser(current);
+            FoxMesFolders.configure(this);
             FoxMesFeatureGate.setEphemeralMedia(current.capabilities().contains(FoxMesModels.CAPABILITY_EPHEMERAL_MEDIA));
         }
         return current;
@@ -509,10 +523,13 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
         }
         setUpdating(true);
         try {
+            if (force) FoxMesFolders.of(this).reset();
             me = null;
             Me self = me();
             startRealtimeIfNeeded(self.eventSeq != null ? self.eventSeq : 0);
             refreshCatalogQuietly();
+            if (force) FoxMesChatAppearance.refreshThemes(this);
+            FoxMesChatAppearance.refreshDefault(this);
             List<Chat> list = new ArrayList<>(api.chats(true));
             try {
                 Chat saved = api.savedChat();
@@ -536,7 +553,9 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
                 }
             }
             current = new Snapshot(self, supported);
+            boolean refreshFolders = force || snapshot == null;
             snapshot = current;
+            if (refreshFolders) FoxMesFolders.refreshNative(this);
             return current;
         } finally {
             setUpdating(false);
@@ -594,12 +613,17 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
         if (previous == null || previous != peer) {
             store().putChat(chat.id, peer, chat.isSavedChat());
         }
+        if (chat.appearance == null) {
+            chat.appearance = new FoxMesChatAppearance.Appearance();chat.appearance.theme = new FoxMesChatAppearance.ThemeState();chat.appearance.theme.theme_emoticon = chat.themeEmoticon;chat.appearance.wallpaper = chat.wallpaper;
+        }
+        chat.appearance = FoxMesChatAppearance.merge(this, chat.id, chat.appearance);
         chats.put(chat.id, chat);
+        FoxMesChatAppearance.apply(this, chat.id, chat.appearance, null);
         if (chat.peer != null) {
-            users.put(chat.peer.id, chat.peer);
+            rememberUser(chat.peer);
         }
         for (User member : chat.members()) {
-            users.put(member.id, member);
+            rememberUser(member);
         }
         return peer;
     }
@@ -686,9 +710,15 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
         return users.get(id);
     }
 
-    public void rememberUser(User user) {
+    public synchronized void rememberUser(User user) {
         if (user != null && user.id != 0) {
             User previous = users.get(user.id);
+            if (previous != null && previous.photosRevision != null && (user.photosRevision == null || user.photosRevision < previous.photosRevision)) {
+                user.avatarUrl = previous.avatarUrl;
+                user.avatarId = previous.avatarId;
+                user.currentProfilePhotoId = previous.currentProfilePhotoId;
+                user.photosRevision = previous.photosRevision;
+            }
             if (previous != null && (user.appearance == null || (previous.appearance != null && previous.appearance.revision > user.appearance.revision))) {
                 user.appearance = previous.appearance;
             }
@@ -948,6 +978,8 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
             }
         }
         catalogIds = ids;
+        FoxMesStickerFavorites favorites = stickerFavorites;
+        if (favorites != null) favorites.catalogChanged();
     }
 
     public LinkedHashMap<String, List<ReactionCatalogItem>> catalogCategories() {

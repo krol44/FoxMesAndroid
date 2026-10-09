@@ -137,7 +137,8 @@ final class FoxMesStickerHandlers {
         transport.on(TLRPC.TL_messages_getFeaturedStickers.class, FoxMesTransport.Lane.INLINE, r -> r.reply(new TLRPC.TL_messages_featuredStickers()));
         transport.on(TLRPC.TL_messages_getFeaturedEmojiStickers.class, FoxMesTransport.Lane.INLINE, r -> r.reply(new TLRPC.TL_messages_featuredStickers()));
         transport.on(TLRPC.TL_messages_getRecentStickers.class, FoxMesTransport.Lane.INLINE, r -> r.reply(new TLRPC.TL_messages_recentStickers()));
-        transport.on(TLRPC.TL_messages_getFavedStickers.class, FoxMesTransport.Lane.INLINE, r -> r.reply(new TLRPC.TL_messages_favedStickers()));
+        transport.on(TLRPC.TL_messages_getFavedStickers.class, FoxMesTransport.Lane.IO, r -> runtime.stickerFavorites().load(r));
+        transport.on(TLRPC.TL_messages_faveSticker.class, FoxMesTransport.Lane.INLINE, r -> runtime.stickerFavorites().toggle(r));
 
         transport.on(TLRPC.TL_langpack_getLanguages.class, FoxMesTransport.Lane.IO, r -> {
             Vector<TLRPC.TL_langPackLanguage> result = new Vector<>(TLRPC.TL_langPackLanguage::TLdeserialize);

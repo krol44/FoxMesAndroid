@@ -9096,6 +9096,7 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public void saveThemeToServer(Theme.ThemeInfo themeInfo, Theme.ThemeAccent accent) {
+        if (org.telegram.messenger.foxmes.FoxMesFeatureGate.enabled) { org.telegram.messenger.foxmes.FoxMesChatAppearance.saveUserTheme(currentAccount, themeInfo, accent); return; }
         if (themeInfo == null) {
             return;
         }
@@ -9137,6 +9138,7 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public void saveWallpaperToServer(File path, Theme.OverrideWallpaperInfo info, boolean install, long taskId) {
+        if (org.telegram.messenger.foxmes.FoxMesFeatureGate.enabled) { if (info.dialogId == 0) org.telegram.messenger.foxmes.FoxMesChatAppearance.saveGlobalWallpaper(currentAccount, path, info, install); return; }
         if (uploadingWallpaper != null) {
             File finalPath = new File(ApplicationLoader.getFilesDirFixed(), info.originalFileName);
             if (path != null && (path.getAbsolutePath().equals(uploadingWallpaper) || path.equals(finalPath))) {

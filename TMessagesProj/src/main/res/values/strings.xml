@@ -9605,7 +9605,7 @@
     <string name="PaidMessageSentTitle_other">%d messages sent!</string>
     <string name="PaidMessageSentSubtitle_one">You paid **%d** star.</string>
     <string name="PaidMessageSentSubtitle_other">You paid **%d** stars.</string>
-    <string name="ContactInfoIsNotContact">Not a contact</string>
+    <string name="ContactInfoIsNotContact">You don\'t have a chat with this user yet</string>
     <string name="ContactInfoIsContact">Contact</string>
     <string name="ContactInfoPhone">Phone number</string>
     <string name="ContactInfoPhoneFragment">Anonymous</string>

@@ -2151,7 +2151,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             participantsMap = null;
 
             if (UserObject.isUserSelf(user)) {
-                imageUpdater = new ImageUpdater(true, ImageUpdater.FOR_TYPE_USER, true);
+                imageUpdater = new ImageUpdater(!FoxMesFeatureGate.enabled, ImageUpdater.FOR_TYPE_USER, !FoxMesFeatureGate.enabled);
                 imageUpdater.setOpenWithFrontfaceCamera(true);
                 imageUpdater.parentFragment = this;
                 imageUpdater.setDelegate(this);
@@ -2671,7 +2671,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         presentFragment(fragment);
                     }
                 } else if (id == edit_profile) {
-                    if (FoxMesFeatureGate.hidesProfileEditing()) {
+                    if (FoxMesFeatureGate.enabled) {
                         FoxMesUi.openProfileSettings(getParentActivity(), currentAccount);
                         return;
                     }
@@ -2822,7 +2822,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         });
                     }
                 } else if (id == edit_info) {
-                    if (FoxMesFeatureGate.hidesProfileEditing()) {
+                    if (FoxMesFeatureGate.enabled) {
                         FoxMesUi.openProfileSettings(getParentActivity(), currentAccount);
                         return;
                     }
@@ -3972,7 +3972,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         onWriteButtonClick();
                         break;
                     case ProfileActionsView.KEY_EDIT_INFO:
-                        if (FoxMesFeatureGate.hidesProfileEditing()) {
+                        if (FoxMesFeatureGate.enabled) {
                             FoxMesUi.openProfileSettings(getParentActivity(), currentAccount);
                             break;
                         }
@@ -3996,7 +3996,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                             AndroidUtilities.addToClipboard("@" + UserObject.getPublicUsername(user));
                         });
                         itemOptions.add(R.drawable.msg_edit, getString(R.string.ProfileUsernameEdit), () -> {
-                            if (FoxMesFeatureGate.hidesProfileEditing()) {
+                            if (FoxMesFeatureGate.enabled) {
                                 FoxMesUi.openProfileSettings(getParentActivity(), currentAccount);
                                 return;
                             }
@@ -12357,7 +12357,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             }
         }
 
-        if (selfUser && FoxMesFeatureGate.hidesProfileEditing()) {
+        if (selfUser && FoxMesFeatureGate.enabled) {
             otherItem.hideSubItem(set_username);
         } else if (userId != 0 && !selfUser && FoxMesFeatureGate.hidesPeerMoreMenu()) {
             otherItem.removeAllSubItems();

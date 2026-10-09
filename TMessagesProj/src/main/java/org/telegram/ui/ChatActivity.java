@@ -254,6 +254,10 @@ import org.telegram.ui.Cells.ShareDialogCell;
 import org.telegram.ui.Cells.StickerCell;
 import org.telegram.ui.Cells.TextSelectionHelper;
 import org.telegram.ui.Cells.UserInfoCell;
+import org.telegram.messenger.foxmes.FoxMesChatRequests;
+import org.telegram.messenger.foxmes.FoxMesFeatureGate;
+import org.telegram.ui.foxmes.FoxMesUi;
+import org.telegram.ui.foxmes.FoxMesUserInfoCell;
 import org.telegram.ui.Components.*;
 import org.telegram.ui.Components.FloatingDebug.FloatingDebugController;
 import org.telegram.ui.Components.FloatingDebug.FloatingDebugProvider;
@@ -8523,6 +8527,8 @@ public class ChatActivity extends BaseFragment implements
                 chatActivityDelegate.onUnpin(true, bottomOverlayChatText.getTag() == null);
             } else if (currentUser != null && currentUser.id == UserObject.VERIFY) {
                 toggleMute(true);
+            } else if (FoxMesFeatureGate.enabled && currentUser != null && !userBlocked && FoxMesChatRequests.gated(currentAccount, currentUser)) {
+                FoxMesUi.chatRequestOverlayClicked(this, currentAccount, currentUser);
             } else if (currentUser != null && userBlocked) {
                 if (currentUser.bot) {
                     String botUserLast = botUser;
@@ -9682,13 +9688,18 @@ public class ChatActivity extends BaseFragment implements
         reportSpamButton.setMaxLines(1);
         reportSpamButton.setGravity(Gravity.CENTER);
         topChatPanelView.addView(reportSpamButton, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.LEFT | Gravity.TOP));
-        reportSpamButton.setOnClickListener(v2 -> AlertsCreator.showBlockReportSpamAlert(ChatActivity.this, dialog_id, currentUser, currentChat, currentEncryptedChat, reportSpamButton.getTag(R.id.object_tag) != null, chatInfo, param -> {
-            if (param == 0) {
-                updateTopPanel(true);
-            } else {
-                finishFragment();
+        reportSpamButton.setOnClickListener(v2 -> {
+            if (FoxMesFeatureGate.enabled && FoxMesUi.answerChatRequest(this, currentAccount, currentUser, false)) {
+                return;
             }
-        }, themeDelegate));
+            AlertsCreator.showBlockReportSpamAlert(ChatActivity.this, dialog_id, currentUser, currentChat, currentEncryptedChat, reportSpamButton.getTag(R.id.object_tag) != null, chatInfo, param -> {
+                if (param == 0) {
+                    updateTopPanel(true);
+                } else {
+                    finishFragment();
+                }
+            }, themeDelegate);
+        });
 
         emojiStatusSpamHint = new LinkSpanDrawable.LinksTextView(getContext(), themeDelegate);
         emojiStatusSpamHint.setTextColor(getThemedColor(Theme.key_chat_topPanelMessage));
@@ -9713,6 +9724,9 @@ public class ChatActivity extends BaseFragment implements
         addToContactsButton.setBackground(Theme.createInsetRoundRectDrawable(getThemedColor(Theme.key_chat_addContact) & 0x19ffffff, dp(18), dp(4)));
         topChatPanelView.addView(addToContactsButton, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.LEFT | Gravity.TOP));
         addToContactsButton.setOnClickListener(v -> {
+            if (FoxMesFeatureGate.enabled && FoxMesUi.answerChatRequest(this, currentAccount, currentUser, true)) {
+                return;
+            }
             if (addToContactsButtonArchive) {
                 getMessagesController().addDialogToFolder(dialog_id, 0, 0, 0);
                 createUndoView();
@@ -23842,6 +23856,9 @@ public class ChatActivity extends BaseFragment implements
             if (did == dialog_id || currentUser != null && currentUser.id == did) {
                 updateTopPanel(!paused);
                 updateInfoTopView(true);
+                if (FoxMesFeatureGate.enabled) {
+                    updateBottomOverlay();
+                }
 
                 if (chatAdapter != null) {
                     chatAdapter.updateRowsSafe();
@@ -27819,7 +27836,9 @@ public class ChatActivity extends BaseFragment implements
             }
         } else {
             showBottomOverlayProgress(false, true);
-            if (userBlocked) {
+            if (FoxMesFeatureGate.enabled && !userBlocked && FoxMesChatRequests.gated(currentAccount, currentUser)) {
+                accentTextButton = FoxMesUi.applyChatRequestOverlay(currentAccount, currentUser, bottomOverlayChatText);
+            } else if (userBlocked) {
                 if (bottomOverlayStartButton != null) {
                     bottomOverlayStartButton.setVisibility(View.INVISIBLE);
                 }
@@ -27976,7 +27995,7 @@ public class ChatActivity extends BaseFragment implements
                 chatActivityEnterView.setVisibility(View.INVISIBLE);
             } else if (chatMode == MODE_PINNED ||
                     currentChat != null && (!ChatObject.isMonoForum(currentChat) || !isSubscriberSuggestions) && ((ChatObject.isNotInChat(currentChat) && !UserObject.isBotForum(currentUser) || !ChatObject.canWriteToChat(currentChat)) && (currentChat.join_to_send || !isThreadChat() || ChatObject.isForum(currentChat)) || forumTopic != null && forumTopic.closed && !ChatObject.canManageTopic(currentAccount, currentChat, forumTopic) || shouldDisplaySwipeToLeftToReplyInForum()) ||
-                    currentUser != null && (UserObject.isDeleted(currentUser) || userBlocked || UserObject.isReplyUser(currentUser))) {
+                    currentUser != null && (UserObject.isDeleted(currentUser) || userBlocked || UserObject.isReplyUser(currentUser) || FoxMesFeatureGate.enabled && FoxMesChatRequests.gated(currentAccount, currentUser))) {
                 if (chatActivityEnterView.isEditingMessage()) {
                     chatActivityEnterView.setVisibility(View.VISIBLE);
                     // AndroidUtilities.updateViewShow(bottomChannelButtonsLayout, false, false, true);
@@ -29392,6 +29411,9 @@ public class ChatActivity extends BaseFragment implements
             }
             if (reportSpamButton != null) {
                 reportSpamButton.setText(LocaleController.getString(R.string.ReportSpamUserNoCaps));
+            }
+            if (FoxMesFeatureGate.enabled) {
+                FoxMesUi.decorateChatRequestBar(currentAccount, user, addToContactsButton, reportSpamButton);
             }
         } else {
             if (showGeo) {
@@ -37369,7 +37391,7 @@ public class ChatActivity extends BaseFragment implements
             } else if (viewType == 4) {
                 view = new ChatLoadingCell(mContext, contentView, themeDelegate);
             } else if (viewType == 6) {
-                view = new UserInfoCell(mContext, currentAccount, themeDelegate);
+                view = FoxMesFeatureGate.enabled ? new FoxMesUserInfoCell(mContext, currentAccount, themeDelegate) : new UserInfoCell(mContext, currentAccount, themeDelegate);
             } else if (viewType == 7) {
                 view = new ChatActionCell(mContext, false, themeDelegate);
             } else if (viewType == 8) {
@@ -43306,6 +43328,10 @@ public class ChatActivity extends BaseFragment implements
 
     private void setChatThemeEmoticon(final TLRPC.ChatTheme theme) {
         if (themeDelegate == null || parentThemeDelegate != null) {
+            return;
+        }
+        if (org.telegram.messenger.foxmes.FoxMesFeatureGate.enabled) {
+            org.telegram.ui.foxmes.FoxMesChatThemeUpdater.apply(currentAccount, dialog_id, theme, themeDelegate, openAnimationStartTime != 0);
             return;
         }
         ThemeKey key = ThemeKey.of(theme);

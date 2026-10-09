@@ -1935,65 +1935,7 @@ public class VoIPFragment implements
                 statusTextView.setText(LocaleController.getString(R.string.VoipFailed), false, animated);
                 final VoIPService voipService = VoIPService.getSharedInstance();
                 final String lastError = voipService != null ? voipService.getLastError() : Instance.ERROR_UNKNOWN;
-                if (!TextUtils.equals(lastError, Instance.ERROR_UNKNOWN)) {
-                    if (TextUtils.equals(lastError, Instance.ERROR_INCOMPATIBLE)) {
-                        final String name = ContactsController.formatName(callingUser.first_name, callingUser.last_name);
-                        final String message = LocaleController.formatString("VoipPeerIncompatible", R.string.VoipPeerIncompatible, name);
-                        showErrorDialog(AndroidUtilities.replaceTags(message));
-                    } else if (TextUtils.equals(lastError, Instance.ERROR_PEER_OUTDATED)) {
-                        if (isVideoCall) {
-                            final String name = UserObject.getFirstName(callingUser);
-                            final String message = LocaleController.formatString("VoipPeerVideoOutdated", R.string.VoipPeerVideoOutdated, name);
-                            boolean[] callAgain = new boolean[1];
-                            AlertDialog dlg = new DarkAlertDialog.Builder(activity)
-                                    .setTitle(LocaleController.getString(R.string.VoipFailed))
-                                    .setMessage(AndroidUtilities.replaceTags(message))
-                                    .setNegativeButton(LocaleController.getString(R.string.Cancel), (dialogInterface, i) -> windowView.finish())
-                                    .setPositiveButton(LocaleController.getString(R.string.VoipPeerVideoOutdatedMakeVoice), (dialogInterface, i) -> {
-                                        callAgain[0] = true;
-                                        currentState = VoIPService.STATE_BUSY;
-                                        Intent intent = new Intent(activity, VoIPService.class);
-                                        intent.putExtra("user_id", callingUser.id);
-                                        intent.putExtra("is_outgoing", true);
-                                        intent.putExtra("start_incall_activity", false);
-                                        intent.putExtra("video_call", false);
-                                        intent.putExtra("can_video_call", false);
-                                        intent.putExtra("account", currentAccount);
-                                        try {
-                                            activity.startService(intent);
-                                        } catch (Throwable e) {
-                                            FileLog.e(e);
-                                        }
-                                    })
-                                    .show();
-                            dlg.setCanceledOnTouchOutside(true);
-                            dlg.setOnDismissListener(dialog -> {
-                                if (!callAgain[0]) {
-                                    windowView.finish();
-                                }
-                            });
-                        } else {
-                            final String name = UserObject.getFirstName(callingUser);
-                            final String message = LocaleController.formatString("VoipPeerOutdated", R.string.VoipPeerOutdated, name);
-                            showErrorDialog(AndroidUtilities.replaceTags(message));
-                        }
-                    } else if (TextUtils.equals(lastError, Instance.ERROR_PRIVACY)) {
-                        final String name = ContactsController.formatName(callingUser.first_name, callingUser.last_name);
-                        final String message = LocaleController.formatString(R.string.CallNotAvailable, name);
-                        showErrorDialog(AndroidUtilities.replaceTags(message));
-                        AlertsCreator.showCallsForbidden(activity, currentAccount, callingUser.id, null);
-                    } else if (TextUtils.equals(lastError, Instance.ERROR_AUDIO_IO)) {
-                        showErrorDialog("Error initializing audio hardware");
-                    } else if (TextUtils.equals(lastError, Instance.ERROR_LOCALIZED)) {
-                        windowView.finish();
-                    } else if (TextUtils.equals(lastError, Instance.ERROR_CONNECTION_SERVICE)) {
-                        showErrorDialog(LocaleController.getString(R.string.VoipErrorUnknown));
-                    } else {
-                        AndroidUtilities.runOnUIThread(() -> windowView.finish(), 1000);
-                    }
-                } else {
-                    AndroidUtilities.runOnUIThread(() -> windowView.finish(), 1000);
-                }
+                showCallFailure(lastError);
                 break;
         }
         if (previewDialog != null) {
@@ -3047,6 +2989,76 @@ public class VoIPFragment implements
         }
 
         deviceIsLocked = ((KeyguardManager) activity.getSystemService(Context.KEYGUARD_SERVICE)).inKeyguardRestrictedInputMode();
+    }
+
+    private void showCallFailure(String lastError) {
+        if (org.telegram.messenger.foxmes.FoxMesFeatureGate.enabled) {
+            org.telegram.ui.foxmes.FoxMesAlertText.showCallFailure(lastError, this::showErrorDialog, this::showNativeCallFailure);
+            return;
+        }
+        showNativeCallFailure(lastError);
+    }
+
+    private void showNativeCallFailure(String lastError) {
+        if (!TextUtils.equals(lastError, Instance.ERROR_UNKNOWN)) {
+            if (TextUtils.equals(lastError, Instance.ERROR_INCOMPATIBLE)) {
+                final String name = ContactsController.formatName(callingUser.first_name, callingUser.last_name);
+                final String message = LocaleController.formatString("VoipPeerIncompatible", R.string.VoipPeerIncompatible, name);
+                showErrorDialog(AndroidUtilities.replaceTags(message));
+            } else if (TextUtils.equals(lastError, Instance.ERROR_PEER_OUTDATED)) {
+                if (isVideoCall) {
+                    final String name = UserObject.getFirstName(callingUser);
+                    final String message = LocaleController.formatString("VoipPeerVideoOutdated", R.string.VoipPeerVideoOutdated, name);
+                    boolean[] callAgain = new boolean[1];
+                    AlertDialog dlg = new DarkAlertDialog.Builder(activity)
+                            .setTitle(LocaleController.getString(R.string.VoipFailed))
+                            .setMessage(AndroidUtilities.replaceTags(message))
+                            .setNegativeButton(LocaleController.getString(R.string.Cancel), (dialogInterface, i) -> windowView.finish())
+                            .setPositiveButton(LocaleController.getString(R.string.VoipPeerVideoOutdatedMakeVoice), (dialogInterface, i) -> {
+                                callAgain[0] = true;
+                                currentState = VoIPService.STATE_BUSY;
+                                Intent intent = new Intent(activity, VoIPService.class);
+                                intent.putExtra("user_id", callingUser.id);
+                                intent.putExtra("is_outgoing", true);
+                                intent.putExtra("start_incall_activity", false);
+                                intent.putExtra("video_call", false);
+                                intent.putExtra("can_video_call", false);
+                                intent.putExtra("account", currentAccount);
+                                try {
+                                    activity.startService(intent);
+                                } catch (Throwable e) {
+                                    FileLog.e(e);
+                                }
+                            })
+                            .show();
+                    dlg.setCanceledOnTouchOutside(true);
+                    dlg.setOnDismissListener(dialog -> {
+                        if (!callAgain[0]) {
+                            windowView.finish();
+                        }
+                    });
+                } else {
+                    final String name = UserObject.getFirstName(callingUser);
+                    final String message = LocaleController.formatString("VoipPeerOutdated", R.string.VoipPeerOutdated, name);
+                    showErrorDialog(AndroidUtilities.replaceTags(message));
+                }
+            } else if (TextUtils.equals(lastError, Instance.ERROR_PRIVACY)) {
+                final String name = ContactsController.formatName(callingUser.first_name, callingUser.last_name);
+                final String message = LocaleController.formatString(R.string.CallNotAvailable, name);
+                showErrorDialog(AndroidUtilities.replaceTags(message));
+                AlertsCreator.showCallsForbidden(activity, currentAccount, callingUser.id, null);
+            } else if (TextUtils.equals(lastError, Instance.ERROR_AUDIO_IO)) {
+                showErrorDialog("Error initializing audio hardware");
+            } else if (TextUtils.equals(lastError, Instance.ERROR_LOCALIZED)) {
+                windowView.finish();
+            } else if (TextUtils.equals(lastError, Instance.ERROR_CONNECTION_SERVICE)) {
+                showErrorDialog(LocaleController.getString(R.string.VoipErrorUnknown));
+            } else {
+                AndroidUtilities.runOnUIThread(() -> windowView.finish(), 1000);
+            }
+        } else {
+            AndroidUtilities.runOnUIThread(() -> windowView.finish(), 1000);
+        }
     }
 
     private void showErrorDialog(CharSequence message) {

@@ -75,19 +75,6 @@ final class FoxMesChatHandlers {
             }
             r.reply(result);
         });
-        transport.on(TLRPC.TL_photos_getUserPhotos.class, FoxMesTransport.Lane.IO, r -> {
-            TLRPC.TL_photos_getUserPhotos req = (TLRPC.TL_photos_getUserPhotos) r.request;
-            long id = userId(req.user_id, runtime);
-            TLRPC.TL_photos_photos result = new TLRPC.TL_photos_photos();
-            User user = knownOrFetched(runtime, id);
-            TLRPC.Photo photo = user != null && req.offset == 0 ? FoxMesTL.avatarPhoto(user, now()) : null;
-            if (photo != null) {
-                result.photos.add(photo);
-            }
-            result.count = result.photos.size();
-            result.users.addAll(runtime.tlUsers(Collections.singletonList(id)));
-            r.reply(result);
-        });
         transport.on(TLRPC.TL_contacts_search.class, FoxMesTransport.Lane.IO, r -> {
             TLRPC.TL_contacts_search req = (TLRPC.TL_contacts_search) r.request;
             TLRPC.TL_contacts_found found = new TLRPC.TL_contacts_found();
@@ -303,10 +290,14 @@ final class FoxMesChatHandlers {
     private static void getPeerDialogs(FoxMesRequest r, FoxMesRuntime runtime) throws IOException {
         TLRPC.TL_messages_getPeerDialogs req = (TLRPC.TL_messages_getPeerDialogs) r.request;
         ArrayList<Chat> selected = new ArrayList<>();
+        ArrayList<Long> chatless = new ArrayList<>();
         for (TLRPC.InputDialogPeer peer : req.peers) {
             long user = peerUserId(peer, runtime);
             long chatId = runtime.chatForPeer(user);
             if (chatId == 0) {
+                if (user > 0) {
+                    chatless.add(user);
+                }
                 continue;
             }
             try {
@@ -318,10 +309,19 @@ final class FoxMesChatHandlers {
                 if (e.status != 404 && e.status != 403) {
                     throw e;
                 }
+                chatless.add(user);
             }
         }
         TLRPC.TL_messages_peerDialogs result = new TLRPC.TL_messages_peerDialogs();
         fillDialogs(runtime, selected, result.dialogs, result.messages, result.users);
+        // A user without a chat still gets an empty dialog, as the real server
+        // answers: loadMessages waits for one before asking getHistory.
+        for (Long user : chatless) {
+            result.dialogs.add(FoxMesTL.emptyDialog(user));
+        }
+        if (!chatless.isEmpty()) {
+            result.users.addAll(runtime.tlUsers(chatless));
+        }
         r.replyLate(() -> {
             result.state = runtime.updates.state();
             return result;
@@ -607,10 +607,11 @@ final class FoxMesChatHandlers {
         runtime.rememberUser(user);
         TLRPC.TL_userFull full = new TLRPC.TL_userFull();
         full.id = id;
-        full.settings = new TLRPC.TL_peerSettings();
+        full.settings = FoxMesChatRequests.peerSettings(runtime, id, user);
         long chatId = runtime.chatForPeer(id);
         Chat chat = chatId != 0 ? runtime.chat(chatId) : null;
         full.notify_settings = FoxMesTL.notifySettings(chat != null ? chat.notificationSettings : null);
+        if (chat != null) FoxMesChatAppearance.fillUserFull(runtime, full, chat.appearance);
         full.phone_calls_available = FoxMesFeatureGate.calls && id != runtime.selfId();
         full.video_calls_available = full.phone_calls_available;
         full.can_pin_message = true;

@@ -3,9 +3,10 @@ package org.telegram.messenger.foxmes;
 import com.google.gson.JsonObject;
 import com.google.gson.reflect.TypeToken;
 
-import org.telegram.messenger.foxmes.FoxMesModels.AuthExchange;
+import org.telegram.messenger.foxmes.FoxMesModels.AuthPoll;
 import org.telegram.messenger.foxmes.FoxMesModels.AuthStart;
 import org.telegram.messenger.foxmes.FoxMesModels.Chat;
+import org.telegram.messenger.foxmes.FoxMesModels.ChatRequestResult;
 import org.telegram.messenger.foxmes.FoxMesModels.DeleteResult;
 import org.telegram.messenger.foxmes.FoxMesModels.Draft;
 import org.telegram.messenger.foxmes.FoxMesModels.EphemeralViewed;
@@ -75,8 +76,8 @@ public final class FoxMesApi {
         return http.request("POST", "/auth/device/start", null, FoxMesJson.body().put("device_name", deviceName), false, AuthStart.class);
     }
 
-    public AuthExchange exchangeDevice(String request, String code) throws IOException {
-        return http.request("POST", "/auth/device/exchange", null, FoxMesJson.body().put("request", request).put("code", code), false, AuthExchange.class);
+    public AuthPoll pollDevice(String request) throws IOException {
+        return http.request("POST", "/auth/device/exchange", null, FoxMesJson.body().put("request", request), false, AuthPoll.class);
     }
 
     public void logout(String token) throws IOException {
@@ -153,6 +154,16 @@ public final class FoxMesApi {
     public Chat directChat(long userId) throws IOException {
         return http.request("POST", "/chats/direct", null,
                 FoxMesJson.body().put("user_id", userId).put("operation_id", FoxMesJson.operationId()), Chat.class);
+    }
+
+    public ChatRequestResult requestChat(long userId) throws IOException {
+        return http.request("POST", "/chats/direct/request", null,
+                FoxMesJson.body().put("user_id", userId).put("operation_id", FoxMesJson.operationId()), ChatRequestResult.class);
+    }
+
+    public ChatRequestResult answerChatRequest(long chatId, boolean accept) throws IOException {
+        return http.request("POST", "/chats/" + chatId + "/request/" + (accept ? "accept" : "decline"), null,
+                FoxMesJson.body().put("operation_id", FoxMesJson.operationId()), ChatRequestResult.class);
     }
 
     public PresenceList chatPresence(long chatId) throws IOException {

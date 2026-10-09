@@ -1035,8 +1035,12 @@ public class ChatThemeBottomSheet extends BottomSheet implements NotificationCen
                     () -> applySelectedTheme(true));
                 return;
             }
-            ChatThemeController.getInstance(currentAccount).clearWallpaper(chatActivity.getDialogId(), false);
-            ChatThemeController.getInstance(currentAccount).setDialogTheme(chatActivity.getDialogId(), tlChatTheme, true);
+            if (org.telegram.messenger.foxmes.FoxMesFeatureGate.enabled) {
+                org.telegram.messenger.foxmes.FoxMesChatAppearance.selectTheme(currentAccount, chatActivity.getDialogId(), tlChatTheme);
+            } else {
+                ChatThemeController.getInstance(currentAccount).clearWallpaper(chatActivity.getDialogId(), false);
+                ChatThemeController.getInstance(currentAccount).setDialogTheme(chatActivity.getDialogId(), tlChatTheme, true);
+            }
             TLRPC.WallPaper wallpaper = hasChanges() ? null : themeDelegate.getCurrentWallpaper();
             if (!chatTheme.showAsDefaultStub) {
                 themeDelegate.setCurrentTheme(chatTheme, wallpaper, true, originalIsDark);
