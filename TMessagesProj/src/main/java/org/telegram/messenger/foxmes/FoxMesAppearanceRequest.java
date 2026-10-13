@@ -11,9 +11,9 @@ public final class FoxMesAppearanceRequest extends TLObject {
 
     public FoxMesAppearanceRequest(int nameColor, long nameIcon, int profileColor, long profileIcon) {
         this.nameColor = nameColor < 0 ? null : nameColor;
-        this.nameIcon = nameIcon == 0 ? null : nameIcon;
+        this.nameIcon = nameIcon == 0 ? null : FoxMesAppearanceHandlers.serverIconId(nameIcon);
         this.profileColor = profileColor < 0 ? null : profileColor;
-        this.profileIcon = profileIcon == 0 ? null : profileIcon;
+        this.profileIcon = profileIcon == 0 ? null : FoxMesAppearanceHandlers.serverIconId(profileIcon);
     }
 
     FoxMesJson.Body body() {

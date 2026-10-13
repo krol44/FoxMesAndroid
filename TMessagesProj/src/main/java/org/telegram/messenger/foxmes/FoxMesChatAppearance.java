@@ -83,7 +83,7 @@ public final class FoxMesChatAppearance {
             Catalog catalog = catalog(runtime);
             TL_account.TL_themes result = new TL_account.TL_themes();
             result.hash = catalog.hash;
-            for (ThemeDefinition definition : FoxMesModels.list(catalog.items)) result.themes.add(theme(runtime, definition));
+            for (ThemeDefinition definition : FoxMesModels.list(catalog.items)) result.themes.add(settingsTheme(runtime, definition));
             for (ThemeDefinition definition : FoxMesModels.list(definitions.items)) result.themes.add(theme(runtime, definition));
             r.reply(result);
         });
@@ -93,13 +93,36 @@ public final class FoxMesChatAppearance {
                 long nativeId = ((TLRPC.TL_inputTheme) req.theme).id;
                 if (nativeId >= 900000000 && nativeId < 1000000000) {
                     for (ThemeDefinition definition : FoxMesModels.list(catalog(runtime).items)) {
-                        if (nativeId == 900000000 + definition.id) { r.reply(theme(runtime, definition)); return; }
+                        if (nativeId == 900000000 + definition.id) { r.reply(settingsTheme(runtime, definition)); return; }
                     }
                     r.fail(400, "THEME_INVALID");
                     return;
                 }
             }
-            long id = req.theme instanceof TLRPC.TL_inputTheme ? ((TLRPC.TL_inputTheme) req.theme).id - 1000000000 : Long.parseLong(((TLRPC.TL_inputThemeSlug) req.theme).slug.substring(7));
+            long id;
+            if (req.theme instanceof TLRPC.TL_inputTheme) {
+                id = ((TLRPC.TL_inputTheme) req.theme).id - 1000000000;
+            } else if (req.theme instanceof TLRPC.TL_inputThemeSlug) {
+                String slug = ((TLRPC.TL_inputThemeSlug) req.theme).slug;
+                if (slug != null && slug.startsWith("foxmes-chat-")) {
+                    for (ThemeDefinition definition : FoxMesModels.list(catalog(runtime).items)) {
+                        if (slug.equals("foxmes-chat-" + definition.id)) { r.reply(settingsTheme(runtime, definition)); return; }
+                    }
+                    r.fail(400, "THEME_INVALID");
+                    return;
+                }
+                try {
+                    if (slug == null || !slug.startsWith("foxmes-")) throw new NumberFormatException();
+                    id = Long.parseLong(slug.substring(7));
+                } catch (NumberFormatException invalid) {
+                    r.fail(400, "THEME_INVALID");
+                    return;
+                }
+            } else {
+                r.fail(400, "THEME_INVALID");
+                return;
+            }
+            if (id <= 0) { r.fail(400, "THEME_INVALID"); return; }
             r.reply(theme(runtime, runtime.api.http.request("GET", "/themes/" + id, null, null, ThemeDefinition.class)));
         });
         transport.on(TL_account.saveTheme.class, FoxMesTransport.Lane.SERIAL, r -> {
@@ -281,9 +304,31 @@ public final class FoxMesChatAppearance {
     static TLRPC.TL_theme theme(FoxMesRuntime runtime, ThemeDefinition source) {
         return nativeTheme(source, state -> wallpaper(runtime, state));
     }
+    private static TLRPC.TL_theme settingsTheme(FoxMesRuntime runtime, ThemeDefinition source) {
+        ThemeDefinition expanded = FoxMesJson.parse(FoxMesJson.gson.toJson(source), ThemeDefinition.class);
+        expanded.settings = new ArrayList<>();
+        for (String base : new String[] {"classic", "day", "night", "tinted"}) {
+            Settings selected = null;
+            for (Settings settings : FoxMesModels.list(source.settings)) {
+                if (base.equals(settings.base_theme)) { selected = settings; break; }
+            }
+            if (selected == null) {
+                String fallback = "classic".equals(base) || "day".equals(base) ? "classic" : "tinted";
+                for (Settings settings : FoxMesModels.list(source.settings)) {
+                    if (fallback.equals(settings.base_theme)) { selected = settings; break; }
+                }
+            }
+            if (selected != null) {
+                Settings settings = FoxMesJson.parse(FoxMesJson.gson.toJson(selected), Settings.class);
+                settings.base_theme = base;
+                expanded.settings.add(settings);
+            }
+        }
+        return theme(runtime, expanded);
+    }
     static TLRPC.TL_theme nativeTheme(ThemeDefinition source, java.util.function.Function<WallpaperState, TLRPC.WallPaper> wallpaperMapper) {
         TLRPC.TL_theme result = new TLRPC.TL_theme();
-        result.id = (source.emoticon == null ? 1000000000 : 900000000) + source.id; result.access_hash = 0; result.slug = "foxmes-" + source.id;
+        result.id = (source.emoticon == null ? 1000000000 : 900000000) + source.id; result.access_hash = 0; result.slug = (source.emoticon == null ? "foxmes-" : "foxmes-chat-") + source.id;
         result.title = source.title; result.emoticon = source.emoticon; result.creator = source.emoticon == null; result.isDefault = source.emoticon != null; result.flags |= 8;
         if (source.emoticon != null) result.flags |= 64;
         for (Settings sourceSettings : FoxMesModels.list(source.settings)) {

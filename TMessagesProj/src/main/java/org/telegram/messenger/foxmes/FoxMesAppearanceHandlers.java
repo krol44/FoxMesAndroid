@@ -6,6 +6,7 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessagesController;
+import org.telegram.messenger.MediaDataController;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
@@ -21,7 +22,8 @@ import java.util.concurrent.ConcurrentHashMap;
 
 final class FoxMesAppearanceHandlers {
     private static final long ICON_BASE = 520093696L;
-    private static final ConcurrentHashMap<Integer, BackgroundIcons> icons = new ConcurrentHashMap<>();
+    private static final long NATIVE_ICON_OFFSET = 1L << 32;
+    private static final ConcurrentHashMap<String, BackgroundIcons> icons = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, ColorCatalog> palettes = new ConcurrentHashMap<>();
     static void register(FoxMesTransport transport, FoxMesRuntime runtime) {
         if (FoxMesFeatureGate.enabled) {
@@ -32,12 +34,20 @@ final class FoxMesAppearanceHandlers {
         transport.on(TLRPC.TL_help_getPeerColors.class, FoxMesTransport.Lane.IO, r -> r.reply(palette(runtime, false)));
         transport.on(TLRPC.TL_help_getPeerProfileColors.class, FoxMesTransport.Lane.IO, r -> r.reply(palette(runtime, true)));
         transport.on(TL_account.getDefaultBackgroundEmojis.class, FoxMesTransport.Lane.IO, r -> {
-            TLRPC.TL_emojiList result = new TLRPC.TL_emojiList();
-            BackgroundIcons catalog = icons(runtime);
-            result.hash = catalog.hash;
-            for (BackgroundIcon icon : FoxMesModels.list(catalog.emojis)) result.document_id.add(icon.id);
+            String owner = scope(runtime);
+            TLRPC.TL_emojiList result = defaultIcons(runtime);
+            AndroidUtilities.runOnUIThread(() -> {
+                if (!owner.equals(scope(runtime))) return;
+                MediaDataController controller = MediaDataController.getInstance(runtime.account);
+                TLRPC.TL_emojiList previous = controller.replyIconsDefault;
+                controller.replyIconsDefault = result;
+                if (previous == null || previous.hash != result.hash || !previous.document_id.equals(result.document_id)) {
+                    NotificationCenter.getInstance(runtime.account).postNotificationName(NotificationCenter.stickersDidLoad, MediaDataController.TYPE_EMOJIPACKS);
+                }
+            });
             r.reply(result);
         });
+        transport.on(TL_account.getDefaultProfilePhotoEmojis.class, FoxMesTransport.Lane.IO, r -> r.reply(defaultIcons(runtime)));
         transport.on(FoxMesAppearanceRequest.class, FoxMesTransport.Lane.SERIAL, r -> {
             FoxMesAppearanceRequest request = (FoxMesAppearanceRequest) r.request;
             User confirmed = persist(runtime, request.body());
@@ -59,7 +69,7 @@ final class FoxMesAppearanceHandlers {
             FoxMesJson.Body choice = FoxMesJson.body();
             if (request.color != null) {
                 if ((request.color.flags & 1) != 0) choice.put("color_id", request.color.color);
-                if ((request.color.flags & 2) != 0) choice.put("background_emoji_id", request.color.background_emoji_id);
+                if ((request.color.flags & 2) != 0) choice.put("background_emoji_id", serverIconId(request.color.background_emoji_id));
             }
             String operation = FoxMesJson.operationId();
             FoxMesJson.Body body = FoxMesJson.body().put("operation_id", operation).put(request.for_profile ? "profile" : "name", choice);
@@ -111,7 +121,7 @@ final class FoxMesAppearanceHandlers {
     static TLRPC.TL_peerColor color(Integer id, Long icon) {
         TLRPC.TL_peerColor result = new TLRPC.TL_peerColor();
         if (id != null) { result.flags |= 1; result.color = id; }
-        if (icon != null && icon != 0) { result.flags |= 2; result.background_emoji_id = icon; }
+        if (icon != null && icon != 0) { result.flags |= 2; result.background_emoji_id = nativeIconId(icon); }
         return result;
     }
     private static TLRPC.help_PeerColorSet pack(ColorOption option, boolean dark, boolean profile) {
@@ -128,7 +138,7 @@ final class FoxMesAppearanceHandlers {
     }
     private static TLRPC.TL_help_peerColors palette(FoxMesRuntime runtime, boolean profile) throws IOException {
         String scope = profile ? "profile" : "replies";
-        String key = runtime.account + ":" + scope;
+        String key = scope(runtime) + ":" + scope;
         ColorCatalog catalog;
         try {
             catalog = runtime.api.http.request("GET", "/peer-colors", Collections.singletonMap("scope", scope), null, ColorCatalog.class);
@@ -149,33 +159,75 @@ final class FoxMesAppearanceHandlers {
         }
         return result;
     }
+    private static String scope(FoxMesRuntime runtime) {
+        return FoxMesConfiguration.baseURL() + ":" + runtime.account + ":" + runtime.selfId();
+    }
+    static void refresh(FoxMesRuntime runtime) {
+        String owner = scope(runtime);
+        AndroidUtilities.runOnUIThread(() -> {
+            if (owner.equals(scope(runtime))) MediaDataController.getInstance(runtime.account).loadReplyIcons();
+        });
+    }
+    private static TLRPC.TL_emojiList defaultIcons(FoxMesRuntime runtime) throws IOException {
+        BackgroundIcons catalog = icons(runtime);
+        TLRPC.TL_emojiList result = new TLRPC.TL_emojiList();
+        result.hash = catalog.hash;
+        for (BackgroundIcon icon : FoxMesModels.list(catalog.emojis)) result.document_id.add(nativeIconId(icon.id));
+        return result;
+    }
     private static BackgroundIcons icons(FoxMesRuntime runtime) throws IOException {
-        BackgroundIcons catalog = icons.get(runtime.account);
+        String owner = scope(runtime);
+        BackgroundIcons catalog = icons.get(owner);
         if (catalog == null) {
             catalog = runtime.api.http.request("GET", "/background-emojis", null, null, BackgroundIcons.class);
-            icons.put(runtime.account, catalog);
+            if (owner.equals(scope(runtime))) icons.put(owner, catalog);
         }
         return catalog;
     }
-    static boolean isIcon(long id) { return id > ICON_BASE && id <= ICON_BASE + 65535; }
+    static long serverIconId(long id) {
+        return id > ICON_BASE + NATIVE_ICON_OFFSET && id <= ICON_BASE + NATIVE_ICON_OFFSET + 65535 ? id - NATIVE_ICON_OFFSET : id;
+    }
+    private static long nativeIconId(long id) {
+        return id > ICON_BASE && id <= ICON_BASE + 65535 ? id + NATIVE_ICON_OFFSET : id;
+    }
+    static boolean isIcon(long id) {
+        long source = serverIconId(id);
+        return source > ICON_BASE && source <= ICON_BASE + 65535;
+    }
     static TLRPC.Document document(FoxMesRuntime runtime, long id) throws IOException {
         for (BackgroundIcon icon : FoxMesModels.list(icons(runtime).emojis)) {
-            if (icon.id != id) continue;
+            if (icon.id != serverIconId(id)) continue;
             FoxMesFileRef ref = new FoxMesFileRef();
             ref.flags = FoxMesFileRef.FLAG_CATALOG;
             ref.url = FoxMesHttp.absolute(icon.assetUrl);
             ref.mime = "image/webp";
+            ref.name = "icon.webp";
+            ref.posterUrl = ref.url;
+            ref.width = ref.height = 128;
             TLRPC.TL_document document = new TLRPC.TL_document();
-            document.id = icon.id;
-            document.access_hash = FoxMesTL.accessHash(icon.id);
+            document.id = id;
+            document.access_hash = FoxMesTL.accessHash(id);
             document.file_reference = ref.encode();
             document.mime_type = "image/webp";
             document.size = icon.size;
             document.dc_id = FoxMesTL.DC;
             document.date = FoxMesHandlers.now();
+            TLRPC.TL_photoSize thumbnail = new TLRPC.TL_photoSize();
+            thumbnail.type = "m";
+            thumbnail.w = thumbnail.h = 128;
+            thumbnail.size = (int) icon.size;
+            thumbnail.location = new TLRPC.TL_fileLocationToBeDeprecated();
+            thumbnail.location.volume_id = id;
+            thumbnail.location.local_id = 1;
+            thumbnail.location.dc_id = FoxMesTL.DC;
+            document.thumbs.add(thumbnail);
+            document.flags |= 1;
             TLRPC.TL_documentAttributeImageSize size = new TLRPC.TL_documentAttributeImageSize();
             size.w = size.h = 128;
             document.attributes.add(size);
+            TLRPC.TL_documentAttributeFilename filename = new TLRPC.TL_documentAttributeFilename();
+            filename.file_name = ref.name;
+            document.attributes.add(filename);
             TLRPC.TL_documentAttributeCustomEmoji emoji = new TLRPC.TL_documentAttributeCustomEmoji();
             emoji.free = emoji.text_color = true;
             emoji.alt = icon.emoji;
@@ -193,7 +245,7 @@ final class FoxMesAppearanceHandlers {
         result.set.title = "Background icons";
         result.set.short_name = "foxmes_background";
         result.set.hash = icons(runtime).hash;
-        for (BackgroundIcon icon : FoxMesModels.list(icons(runtime).emojis)) result.documents.add(document(runtime, icon.id));
+        for (BackgroundIcon icon : FoxMesModels.list(icons(runtime).emojis)) result.documents.add(document(runtime, nativeIconId(icon.id)));
         result.set.count = result.documents.size();
         return result;
     }

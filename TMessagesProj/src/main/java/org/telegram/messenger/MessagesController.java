@@ -7383,13 +7383,17 @@ public class MessagesController extends BaseController implements NotificationCe
     private final long peerDialogRequestTimeout = 1000 * 60 * 4;
 
     private void reloadDialogsReadValue(ArrayList<TLRPC.Dialog> dialogs, long did) {
-        if (did == 0 && (dialogs == null || dialogs.isEmpty())) {
+        if (DialogObject.isFolderDialogId(did) || did == 0 && (dialogs == null || dialogs.isEmpty())) {
             return;
         }
         TLRPC.TL_messages_getPeerDialogs req = new TLRPC.TL_messages_getPeerDialogs();
         if (dialogs != null) {
             for (int a = 0; a < dialogs.size(); a++) {
-                TLRPC.InputPeer inputPeer = getInputPeer(dialogs.get(a).id);
+                long dialogId = dialogs.get(a).id;
+                if (DialogObject.isFolderDialogId(dialogId)) {
+                    continue;
+                }
+                TLRPC.InputPeer inputPeer = getInputPeer(dialogId);
                 if (inputPeer instanceof TLRPC.TL_inputPeerChannel && inputPeer.access_hash == 0) {
                     continue;
                 }

@@ -530,6 +530,7 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
             refreshCatalogQuietly();
             if (force) FoxMesChatAppearance.refreshThemes(this);
             FoxMesChatAppearance.refreshDefault(this);
+            FoxMesAppearanceHandlers.refresh(this);
             List<Chat> list = new ArrayList<>(api.chats(true));
             try {
                 Chat saved = api.savedChat();

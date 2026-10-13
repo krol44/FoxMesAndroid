@@ -101,13 +101,13 @@ final class FoxMesStickerHandlers {
         transport.on(TLRPC.TL_messages_getDefaultTagReactions.class, FoxMesTransport.Lane.INLINE, r -> r.reply(reactions(new ArrayList<>())));
         transport.on(TLRPC.TL_messages_getCustomEmojiDocuments.class, FoxMesTransport.Lane.IO, r -> {
             TLRPC.TL_messages_getCustomEmojiDocuments req = (TLRPC.TL_messages_getCustomEmojiDocuments) r.request;
-            runtime.ensureCatalog();
             Vector<TLRPC.Document> result = new Vector<>(TLRPC.Document::TLdeserialize);
             for (Long id : req.document_id) {
                 if (FoxMesAppearanceHandlers.isIcon(id)) {
                     result.objects.add(FoxMesAppearanceHandlers.document(runtime, id));
                     continue;
                 }
+                runtime.ensureCatalog();
                 ReactionCatalogItem item = runtime.catalogItem(id);
                 if (item != null) {
                     result.objects.add(catalogDocument(runtime, item, false));
