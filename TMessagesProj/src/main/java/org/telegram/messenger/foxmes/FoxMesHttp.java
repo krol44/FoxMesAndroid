@@ -10,6 +10,7 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.security.cert.X509Certificate;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -53,9 +54,14 @@ public final class FoxMesHttp {
     private static OkHttpClient sharedInsecureClient;
     private static OkHttpClient sharedDownloadClient;
     private static OkHttpClient sharedInsecureDownloadClient;
+    private static final Map<String, OkHttpClient> socketClients = new HashMap<>();
+
+    private static final long SOCKET_PING_SECONDS = 10;
+    private static final long SOCKET_BACKGROUND_PING_SECONDS = 25;
 
     private final TokenProvider tokenProvider;
     private volatile Runnable onUnauthorized;
+    private volatile Runnable onTransportFailure;
 
     public FoxMesHttp(TokenProvider tokenProvider) {
         this.tokenProvider = tokenProvider;
@@ -63,6 +69,10 @@ public final class FoxMesHttp {
 
     public void setOnUnauthorized(Runnable onUnauthorized) {
         this.onUnauthorized = onUnauthorized;
+    }
+
+    public void setOnTransportFailure(Runnable onTransportFailure) {
+        this.onTransportFailure = onTransportFailure;
     }
 
     public String token() {
@@ -151,8 +161,20 @@ public final class FoxMesHttp {
         }
     }
 
-    public static OkHttpClient webSocketClient(HttpUrl url) {
-        return clientFor(url, false);
+    public static OkHttpClient webSocketClient(HttpUrl url, boolean background) {
+        OkHttpClient base = clientFor(url, false);
+        long seconds = background ? SOCKET_BACKGROUND_PING_SECONDS : SOCKET_PING_SECONDS;
+        synchronized (FoxMesHttp.class) {
+            String key = (base == sharedInsecureClient ? "insecure:" : "default:") + seconds;
+            OkHttpClient client = socketClients.get(key);
+            if (client == null) {
+                client = base.newBuilder()
+                        .pingInterval(seconds, TimeUnit.SECONDS)
+                        .build();
+                socketClients.put(key, client);
+            }
+            return client;
+        }
     }
 
 
@@ -274,7 +296,17 @@ public final class FoxMesHttp {
 
     private String execute(OkHttpClient client, Request request, String[] lane) throws IOException {
         Call call = client.newCall(request);
-        try (Response response = call.execute()) {
+        Response executed;
+        try {
+            executed = call.execute();
+        } catch (IOException e) {
+            Runnable callback = onTransportFailure;
+            if (callback != null && !call.isCanceled()) {
+                callback.run();
+            }
+            throw e;
+        }
+        try (Response response = executed) {
             if (lane != null) {
                 String value = response.header(LANE_HEADER);
                 if (value != null && !value.trim().isEmpty()) {

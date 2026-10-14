@@ -40,6 +40,7 @@ public final class FoxMesWebSocket {
     private int attempt;
     private long lastSequence;
     private int generation;
+    private boolean background;
 
     public FoxMesWebSocket(int account, FoxMesHttp http, Listener listener) {
         this.http = http;
@@ -78,17 +79,39 @@ public final class FoxMesWebSocket {
         }
     }
 
-    public synchronized void restart() {
-        if (!running) {
-            return;
+    public void restart() {
+        restart(-1);
+    }
+
+    private void restart(int expectedGeneration) {
+        boolean notify;
+        synchronized (this) {
+            if (!running || (expectedGeneration >= 0 && expectedGeneration != generation)) {
+                return;
+            }
+            generation++;
+            if (socket != null) {
+                socket.cancel();
+                socket = null;
+            }
+            notify = connected;
+            connected = false;
+            attempt = 0;
+            connect();
         }
-        generation++;
-        if (socket != null) {
-            socket.cancel();
-            socket = null;
+        if (notify) {
+            listener.onDisconnected();
         }
-        attempt = 0;
-        connect();
+    }
+
+    public void refreshPingInterval() {
+        boolean stale;
+        synchronized (this) {
+            stale = running && socket != null && background == FoxMesAppState.isForeground();
+        }
+        if (stale) {
+            restart();
+        }
     }
 
     public synchronized boolean isConnected() {
@@ -131,7 +154,8 @@ public final class FoxMesWebSocket {
                 .url(url)
                 .header("Authorization", "Bearer " + token)
                 .build();
-        socket = FoxMesHttp.webSocketClient(url).newWebSocket(request, new WebSocketListener() {
+        background = !FoxMesAppState.isForeground();
+        socket = FoxMesHttp.webSocketClient(url, background).newWebSocket(request, new WebSocketListener() {
             @Override
             public void onOpen(WebSocket webSocket, Response response) {
                 synchronized (FoxMesWebSocket.this) {
@@ -227,6 +251,7 @@ public final class FoxMesWebSocket {
         if (event == null || event.type == null) {
             return;
         }
+        boolean sequenceGap = false;
         synchronized (this) {
             if (current != generation) {
                 return;
@@ -240,13 +265,16 @@ public final class FoxMesWebSocket {
                 long resume = next != null ? next : event.seq;
                 lastSequence = Math.max(lastSequence, resume - 1);
             } else if (event.seq > 0 && lastSequence > 0 && event.seq > lastSequence + 1) {
-                restart();
-                return;
+                sequenceGap = true;
             } else if (event.seq > 0 && event.seq <= lastSequence) {
                 return;
             } else if (event.seq > 0) {
                 lastSequence = event.seq;
             }
+        }
+        if (sequenceGap) {
+            restart(current);
+            return;
         }
         if ("gap.detected".equals(event.type)) {
             long resume;

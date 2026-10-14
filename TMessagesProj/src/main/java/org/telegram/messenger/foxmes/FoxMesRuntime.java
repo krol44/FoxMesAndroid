@@ -47,6 +47,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class FoxMesRuntime implements FoxMesTL.MapContext {
 
     private static final FoxMesRuntime[] instances = new FoxMesRuntime[UserConfig.MAX_ACCOUNT_COUNT];
+    private static final long TRANSPORT_RESTART_INTERVAL_MS = 10_000;
 
     public static FoxMesRuntime getInstance(int account) {
         FoxMesRuntime runtime = instances[account];
@@ -91,6 +92,7 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
     private volatile FoxMesStickerFavorites stickerFavorites;
     private volatile long sessionUserId;
     private volatile boolean realtimePaused;
+    private volatile long lastTransportRestartAt;
     private volatile long lastRealtimeAt;
     private volatile long openedChatId;
     private final ConcurrentHashMap<Long, long[]> presence = new ConcurrentHashMap<>();
@@ -144,6 +146,7 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
             }
         });
         http.setOnUnauthorized(this::handleUnauthorized);
+        http.setOnTransportFailure(this::onTransportFailure);
         chatToPeer.putAll(store().chatToPeer());
         for (Map.Entry<Long, Long> entry : chatToPeer.entrySet()) {
             peerToChat.put(entry.getValue(), entry.getKey());
@@ -266,6 +269,30 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
         if (started && seq > 0) {
             socket.start(seq);
         }
+    }
+
+    void refreshSocketPing() {
+        if (started && !realtimePaused) {
+            socket.refreshPingInterval();
+        }
+    }
+
+    void onNetworkChanged() {
+        if (started && !realtimePaused) {
+            socket.restart();
+        }
+    }
+
+    private void onTransportFailure() {
+        if (!started || realtimePaused || !socket.isConnected()) {
+            return;
+        }
+        long now = SystemClock.elapsedRealtime();
+        if (now - lastTransportRestartAt < TRANSPORT_RESTART_INTERVAL_MS) {
+            return;
+        }
+        lastTransportRestartAt = now;
+        socket.restart();
     }
 
     void syncForPush(long timeoutMs, long quietMs) {

@@ -2,6 +2,14 @@ package org.telegram.messenger.foxmes;
 
 import android.app.Activity;
 import android.app.Application;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkInfo;
+import android.os.Build;
 import android.os.Bundle;
 
 import org.telegram.messenger.AndroidUtilities;
@@ -17,6 +25,7 @@ final class FoxMesAppState {
     private static final long PAUSE_DELAY_MS = 10_000;
 
     private static boolean registered;
+    private static String networkKey;
     private static volatile int startedActivities;
     private static final AtomicInteger pushHolds = new AtomicInteger();
     private static final Runnable pause = FoxMesAppState::pauseIfAllowed;
@@ -39,6 +48,7 @@ final class FoxMesAppState {
                         if (startedActivities == 1) {
                             AndroidUtilities.cancelRunOnUIThread(pause);
                             FoxMesRuntime.forEachStarted(FoxMesRuntime::resumeRealtime);
+                            FoxMesRuntime.forEachStarted(FoxMesRuntime::refreshSocketPing);
                         }
                     }
 
@@ -70,11 +80,50 @@ final class FoxMesAppState {
                     public void onActivityDestroyed(Activity activity) {
                     }
                 });
+                watchNetwork(application);
             }
             if (startedActivities == 0) {
                 schedulePause();
             }
         });
+    }
+
+    private static void watchNetwork(Application application) {
+        networkKey = currentNetworkKey();
+        try {
+            application.registerReceiver(new BroadcastReceiver() {
+                @Override
+                public void onReceive(Context context, Intent intent) {
+                    String key = currentNetworkKey();
+                    if (key == null || key.equals(networkKey)) {
+                        return;
+                    }
+                    networkKey = key;
+                    FoxMesRuntime.forEachStarted(FoxMesRuntime::onNetworkChanged);
+                }
+            }, new IntentFilter(ConnectivityManager.CONNECTIVITY_ACTION));
+        } catch (Exception e) {
+            FoxMesLog.e("network receiver", e);
+        }
+    }
+
+    private static String currentNetworkKey() {
+        try {
+            ConnectivityManager manager = (ConnectivityManager) ApplicationLoader.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE);
+            NetworkInfo info = manager.getActiveNetworkInfo();
+            if (info == null || !info.isConnected()) {
+                return "";
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                Network network = manager.getActiveNetwork();
+                if (network != null) {
+                    return network.toString();
+                }
+            }
+            return info.getType() + ":" + info.getExtraInfo();
+        } catch (Throwable e) {
+            return null;
+        }
     }
 
     private static void schedulePause() {
@@ -109,6 +158,8 @@ final class FoxMesAppState {
         FoxMesRuntime.forEachStarted(runtime -> {
             if (!backgroundConnection(runtime.account)) {
                 runtime.pauseRealtime();
+            } else {
+                runtime.refreshSocketPing();
             }
         });
     }
