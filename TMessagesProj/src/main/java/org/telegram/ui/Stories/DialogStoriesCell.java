@@ -1,5 +1,6 @@
 package org.telegram.ui.Stories;
 
+import org.telegram.messenger.foxmes.FoxMesFeatureGate;
 import static org.telegram.messenger.AndroidUtilities.dp;
 import static org.telegram.messenger.AndroidUtilities.dpf2;
 import static org.telegram.messenger.AndroidUtilities.lerp;
@@ -2166,7 +2167,7 @@ public class DialogStoriesCell extends FrameLayout implements NotificationCenter
             final boolean isCollectible = user.emoji_status instanceof TLRPC.TL_emojiStatusCollectible;
             statusDrawable.set(emojiStatusId, animated);
             statusDrawable.setParticles(isCollectible, animated);
-        } else if (user != null && MessagesController.getInstance(currentAccount).isPremiumUser(user)) {
+        } else if (user != null && MessagesController.getInstance(currentAccount).isPremiumUser(user) && !FoxMesFeatureGate.hidesPremiumBadge()) {
             if (premiumStar == null) {
                 premiumStar = getContext().getResources().getDrawable(R.drawable.msg_premium_liststar).mutate();
                 premiumStar = new AnimatedEmojiDrawable.WrapSizeDrawable(premiumStar, dp(18), dp(18)) {

@@ -26,6 +26,16 @@ public final class FoxMesUi {
     public static final int CREATE_MEET = 0x0F0E0001;
     public static final int EDIT_CONTACT = 0x0F0E0002;
 
+    public static final int STATUS_PICKER = 600301;
+
+    public static void addStatusMenu(ActionBarMenuItem menu, int account) {
+        if (menu == null || !org.telegram.messenger.foxmes.FoxMesPeerStatusHandlers.available(account)) return;
+        menu.addSubItem(STATUS_PICKER, R.drawable.msg_emoji_smiles, LocaleController.getString(R.string.SetEmojiStatus));
+    }
+    public static void statusPicker(BaseFragment fragment) {
+        if (fragment instanceof org.telegram.ui.ProfileActivity) ((org.telegram.ui.ProfileActivity) fragment).showStatusSelect();
+    }
+
     private FoxMesUi() {
     }
 

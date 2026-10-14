@@ -1,5 +1,6 @@
 package org.telegram.ui.Components.Premium;
 
+import org.telegram.messenger.foxmes.FoxMesFeatureGate;
 import static org.telegram.messenger.LocaleController.formatPluralStringComma;
 import static org.telegram.messenger.LocaleController.getString;
 
@@ -294,10 +295,15 @@ public class PremiumPreviewBottomSheet extends BottomSheetWithRecyclerListView i
 
     protected LinkSpanDrawable.LinksTextView subtitleView;
 
+    private boolean statusOnly() {
+        return FoxMesFeatureGate.hidesTelegramPremium() && (emojiStatusCollectible != null || statusStickerSet != null || isEmojiStatus);
+    }
+
     public void setTitle(boolean animated) {
         if (titleView == null || subtitleView == null) {
             return;
         }
+        subtitleView.setVisibility(statusOnly() ? View.GONE : View.VISIBLE);
         if (emojiStatusCollectible != null) {
             String collectionName = emojiStatusCollectible.title;
             int spaceIndex;
@@ -652,7 +658,7 @@ public class PremiumPreviewBottomSheet extends BottomSheetWithRecyclerListView i
 
         @Override
         public int getItemCount() {
-            return rowCount;
+            return statusOnly() ? paddingRow + 1 : rowCount;
         }
 
         @Override

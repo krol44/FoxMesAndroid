@@ -1,5 +1,6 @@
 package org.telegram.ui;
 
+import org.telegram.messenger.foxmes.FoxMesFeatureGate;
 import static org.telegram.messenger.AndroidUtilities.dp;
 import static org.telegram.messenger.AndroidUtilities.translitSafe;
 import static org.telegram.ui.Stars.StarsController.findAttribute;
@@ -1314,7 +1315,8 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
 
     private Drawable getPremiumStar() {
         if (premiumStar == null) {
-            if (type == TYPE_SET_REPLY_ICON || type == TYPE_EMOJI_STATUS_CHANNEL || type == TYPE_EMOJI_STATUS_CHANNEL_TOP || type == TYPE_SET_REPLY_ICON_BOTTOM) {
+            if (type == TYPE_SET_REPLY_ICON || type == TYPE_EMOJI_STATUS_CHANNEL || type == TYPE_EMOJI_STATUS_CHANNEL_TOP || type == TYPE_SET_REPLY_ICON_BOTTOM
+                    || (FoxMesFeatureGate.hidesPremiumBadge() && (type == TYPE_EMOJI_STATUS || type == TYPE_EMOJI_STATUS_TOP))) {
                 premiumStar = ApplicationLoader.applicationContext.getResources().getDrawable(R.drawable.msg_filled_blocked).mutate();
             } else {
                 premiumStar = ApplicationLoader.applicationContext.getResources().getDrawable(R.drawable.msg_settings_premium).mutate();

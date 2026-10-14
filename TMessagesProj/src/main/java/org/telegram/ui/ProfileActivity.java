@@ -2555,6 +2555,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         return;
                     }
                     finishFragment();
+                } else if (id == FoxMesUi.STATUS_PICKER && FoxMesFeatureGate.enabled) {
+                    FoxMesUi.statusPicker(ProfileActivity.this);
                 } else if (id == FoxMesUi.CREATE_MEET) {
                     FoxMesUi.createMeet(ProfileActivity.this, userId);
                 } else if (id == FoxMesUi.EDIT_CONTACT) {
@@ -12358,6 +12360,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         }
 
         if (selfUser && FoxMesFeatureGate.enabled) {
+            FoxMesUi.addStatusMenu(otherItem, currentAccount);
             otherItem.hideSubItem(set_username);
         } else if (userId != 0 && !selfUser && FoxMesFeatureGate.hidesPeerMoreMenu()) {
             otherItem.removeAllSubItems();

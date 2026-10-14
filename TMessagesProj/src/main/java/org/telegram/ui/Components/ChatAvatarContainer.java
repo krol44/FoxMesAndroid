@@ -8,6 +8,7 @@
 
 package org.telegram.ui.Components;
 
+import org.telegram.messenger.foxmes.FoxMesFeatureGate;
 import static org.telegram.messenger.AndroidUtilities.dp;
 import static org.telegram.messenger.AndroidUtilities.dpf2;
 import static org.telegram.messenger.AndroidUtilities.replaceArrows;
@@ -966,14 +967,14 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
             rightDrawableIsScamOrVerified = false;
             rightDrawable2ContentDescription = null;
         }
-        if (premium || DialogObject.getEmojiStatusDocumentId(emojiStatus) != 0) {
+        if ((premium && !FoxMesFeatureGate.hidesPremiumBadge()) || DialogObject.getEmojiStatusDocumentId(emojiStatus) != 0) {
             if (titleTextView.getRightDrawable() instanceof AnimatedEmojiDrawable.WrapSizeDrawable &&
                 ((AnimatedEmojiDrawable.WrapSizeDrawable) titleTextView.getRightDrawable()).getDrawable() instanceof AnimatedEmojiDrawable) {
                 ((AnimatedEmojiDrawable) ((AnimatedEmojiDrawable.WrapSizeDrawable) titleTextView.getRightDrawable()).getDrawable()).removeView(titleTextView);
             }
             if (DialogObject.getEmojiStatusDocumentId(emojiStatus) != 0) {
                 emojiStatusDrawable.set(DialogObject.getEmojiStatusDocumentId(emojiStatus), animated);
-            } else if (premium) {
+            } else if (premium && !FoxMesFeatureGate.hidesPremiumBadge()) {
                 emojiStatusDefaultDrawable = ContextCompat.getDrawable(ApplicationLoader.applicationContext, R.drawable.msg_premium_liststar).mutate();
                 emojiStatusDefaultDrawable.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_profile_verifiedBackground), PorterDuff.Mode.MULTIPLY));
                 emojiStatusDrawable.set(emojiStatusDefaultDrawable, animated);
@@ -982,7 +983,7 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
             }
             emojiStatusDrawable.setColor(getThemedColor(Theme.key_profile_verifiedBackground));
             titleTextView.setRightDrawable(emojiStatusDrawable);
-            rightDrawableIsScamOrVerified = false;
+            rightDrawableIsScamOrVerified = scam || fake || verified;
             rightDrawableContentDescription = getString(R.string.AccDescrPremium);
         } else {
             titleTextView.setRightDrawable(null);

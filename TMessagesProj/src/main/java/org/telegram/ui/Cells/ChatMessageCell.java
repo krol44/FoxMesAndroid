@@ -19794,7 +19794,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                     nameStatusSlug = ((TLRPC.TL_emojiStatusCollectible) currentUser.emoji_status).slug;
                 }
                 return emojiStatusId;
-            } else if (currentUser.premium) {
+            } else if (currentUser.premium && !FoxMesFeatureGate.hidesPremiumBadge()) {
                 return ContextCompat.getDrawable(ApplicationLoader.applicationContext, R.drawable.msg_premium_liststar).mutate();
             }
         } else if (currentChat != null) {

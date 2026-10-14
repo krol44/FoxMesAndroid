@@ -56,7 +56,21 @@ public final class FoxMesModels {
         public String contactNote;
         @SerializedName("peer_appearance") public PeerAppearance appearance;
         @SerializedName("registered_at") public String registeredAt;
+        public Boolean verified;
+        public Boolean premium;
+        @SerializedName("verification_revision") public Long verificationRevision;
+        @SerializedName("emoji_status") public EmojiStatus emojiStatus;
     }
+
+    public static class StatusAsset {
+        public long id;
+        public String url;
+        @SerializedName("document_id") public long documentId;
+        @SerializedName("preview_url") public String previewUrl;
+        @SerializedName("mime_type") public String mimeType;
+    }
+    public static class EmojiStatus { public StatusAsset asset; public Long until; public long revision; }
+    public static class StatusCatalog { public List<StatusAsset> items; }
 
     public static class ChatRequest {
         public String status;

@@ -124,7 +124,18 @@ final class FoxMesStickerHandlers {
         transport.on(TLRPC.TL_messages_getStickerSet.class, FoxMesTransport.Lane.IO, r -> {
             TLRPC.TL_messages_getStickerSet req = (TLRPC.TL_messages_getStickerSet) r.request;
             if (req.stickerset instanceof TLRPC.TL_inputStickerSetEmojiDefaultStatuses) {
-                r.reply(FoxMesAppearanceHandlers.iconSet(runtime));
+                TLRPC.TL_messages_stickerSet set = new TLRPC.TL_messages_stickerSet();
+                set.set = new TLRPC.TL_stickerSet();
+                set.set.id = 1L << 49;
+                set.set.emojis = true;
+                set.set.title = "Emoji statuses";
+                set.set.short_name = "foxmes_statuses";
+                for (TLRPC.EmojiStatus status : FoxMesPeerStatusHandlers.statuses(runtime).statuses) {
+                    TLRPC.Document document = FoxMesPeerStatusHandlers.document(runtime, org.telegram.messenger.DialogObject.getEmojiStatusDocumentId(status));
+                    if (document != null) set.documents.add(document);
+                }
+                set.set.count = set.documents.size();
+                r.reply(set);
                 return;
             }
             TLRPC.TL_messages_stickerSet set = stickerSet(runtime, req.stickerset);

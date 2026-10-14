@@ -1,5 +1,6 @@
 package org.telegram.ui.Components;
 
+import org.telegram.messenger.foxmes.FoxMesFeatureGate;
 import android.graphics.drawable.Drawable;
 import android.view.View;
 
@@ -45,7 +46,7 @@ public class StatusBadgeComponent {
         } else if (user != null && DialogObject.getEmojiStatusDocumentId(user.emoji_status) != 0) {
             statusDrawable.set(DialogObject.getEmojiStatusDocumentId(user.emoji_status), animated);
             statusDrawable.setColor(colorFilter);
-        } else if (user != null && user.premium) {
+        } else if (user != null && user.premium && !FoxMesFeatureGate.hidesPremiumBadge()) {
             statusDrawable.set(PremiumGradient.getInstance().premiumStarDrawableMini, animated);
             statusDrawable.setColor(colorFilter);
         } else {

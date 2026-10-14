@@ -25,7 +25,6 @@ settings.local.json
 
 # AI / code-index work folders (session-specific, not for version control)
 .claude/
-.gitnexus/
 
 # Release: local checklist and the packages foxmes/build-android.sh produces
 /RELEASE.md

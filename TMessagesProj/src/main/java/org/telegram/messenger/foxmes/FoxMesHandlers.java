@@ -15,6 +15,7 @@ final class FoxMesHandlers {
         FoxMesConfigHandlers.register(transport, runtime);
         FoxMesFolders.register(transport, runtime);
         FoxMesAppearanceHandlers.register(transport, runtime);
+        FoxMesPeerStatusHandlers.register(transport, runtime);
         FoxMesChatHandlers.register(transport, runtime);
         FoxMesChatAppearance.register(transport, runtime);
         FoxMesProfilePhotos.register(transport, runtime);

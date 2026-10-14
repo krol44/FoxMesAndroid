@@ -148,11 +148,18 @@ public final class FoxMesTL {
         user.id = source.id;
         boolean self = source.id == context.selfId();
         user.self = self;
-        user.premium = self;
+        user.premium = Boolean.TRUE.equals(source.premium);
+        user.verified = Boolean.TRUE.equals(source.verified);
+        if (source.emojiStatus != null) {
+            user.emoji_status = FoxMesPeerStatusHandlers.nativeStatus(source.emojiStatus);
+            user.flags |= 1 << 30;
+            if (context instanceof FoxMesRuntime) FoxMesPeerStatusHandlers.remember((FoxMesRuntime) context, source.emojiStatus);
+        }
         user.contact = Boolean.TRUE.equals(source.isContact);
-        if (source.isContact == null && context instanceof FoxMesRuntime) {
+        if ((source.isContact == null || source.premium == null) && context instanceof FoxMesRuntime) {
             TLRPC.User cached = org.telegram.messenger.MessagesController.getInstance(((FoxMesRuntime) context).account).getUser(source.id);
-            if (cached != null) user.contact = cached.contact;
+            if (cached != null && source.isContact == null) user.contact = cached.contact;
+            if (cached != null && source.premium == null) user.premium = cached.premium;
         }
         user.flags = TLObject.setFlag(user.flags, FLAG_0, true);
         user.access_hash = accessHash(source.id);

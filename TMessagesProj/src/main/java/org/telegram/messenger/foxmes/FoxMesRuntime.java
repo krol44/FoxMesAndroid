@@ -83,6 +83,7 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
     private final AtomicBoolean handlingUnauthorized = new AtomicBoolean();
 
     private volatile Me me;
+    volatile boolean statusesSupported;
     private volatile ReactionCatalog catalog;
     private volatile Set<Integer> catalogIds = Collections.emptySet();
     private volatile Snapshot snapshot;
@@ -307,6 +308,7 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
         serial.execute(() -> FoxMesEvents.getInstance(account).reset());
         snapshot = null;
         me = null;
+        statusesSupported = false;
         chats.clear();
         users.clear();
         missingUsers.clear();
@@ -505,6 +507,7 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
         if (current == null) {
             current = api.me();
             me = current;
+            statusesSupported = current.capabilities().contains("emoji-status-v1");
             rememberUser(current);
             FoxMesFolders.configure(this);
             FoxMesFeatureGate.setEphemeralMedia(current.capabilities().contains(FoxMesModels.CAPABILITY_EPHEMERAL_MEDIA));
@@ -525,6 +528,7 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
         try {
             if (force) FoxMesFolders.of(this).reset();
             me = null;
+            statusesSupported = false;
             Me self = me();
             startRealtimeIfNeeded(self.eventSeq != null ? self.eventSeq : 0);
             refreshCatalogQuietly();
@@ -714,6 +718,12 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
     public synchronized void rememberUser(User user) {
         if (user != null && user.id != 0) {
             User previous = users.get(user.id);
+            if (previous != null && (user.verified == null || (previous.verificationRevision != null && (user.verificationRevision == null || user.verificationRevision < previous.verificationRevision)))) {
+                user.verified = previous.verified;
+                user.verificationRevision = previous.verificationRevision;
+            }
+            if (previous != null && (user.emojiStatus == null || (previous.emojiStatus != null && user.emojiStatus.revision < previous.emojiStatus.revision))) user.emojiStatus = previous.emojiStatus;
+            FoxMesPeerStatusHandlers.remember(this, user.emojiStatus);
             if (previous != null && previous.photosRevision != null && (user.photosRevision == null || user.photosRevision < previous.photosRevision)) {
                 user.avatarUrl = previous.avatarUrl;
                 user.avatarId = previous.avatarId;
