@@ -417,8 +417,10 @@ public class VoIPPreNotificationService { // } extends Service implements AudioM
         currentState = new State(account, user_id, call);
 
         acknowledge(context, account, call, () -> {
-            pendingVoIP = intent;
-            pendingCall = call;
+            if (pendingCall != call) {
+                FileLog.d("VoIPPreNotification.show(): call " + call.id + " was dismissed while waiting for receivedCall");
+                return;
+            }
 
             final NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
             nm.notify(VoIPService.ID_INCOMING_CALL_PRENOTIFICATION, makeNotification(context, account, user_id, call.id, video));
