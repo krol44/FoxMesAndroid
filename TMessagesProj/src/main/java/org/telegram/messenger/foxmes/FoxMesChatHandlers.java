@@ -473,6 +473,7 @@ final class FoxMesChatHandlers {
         Integer before = req.offset_id > 0 ? req.offset_id : null;
         if (req.filter instanceof TLRPC.TL_inputMessagesFilterPinned) {
             PinnedState pinned = runtime.api.pinnedMessages(chatId);
+            FoxMesPins.replace(runtime.store(), chatId, pinned);
             ArrayList<Message> items = new ArrayList<>();
             ArrayList<Integer> ids = new ArrayList<>(pinned.messageIds());
             Collections.sort(ids, Collections.reverseOrder());
@@ -621,6 +622,7 @@ final class FoxMesChatHandlers {
         if (chatId != 0) {
             try {
                 PinnedState pinned = runtime.api.pinnedMessages(chatId);
+                FoxMesPins.replace(runtime.store(), chatId, pinned);
                 if (pinned.topMessageId > 0) {
                     full.pinned_msg_id = pinned.topMessageId;
                     full.flags |= TLObject.FLAG_6;

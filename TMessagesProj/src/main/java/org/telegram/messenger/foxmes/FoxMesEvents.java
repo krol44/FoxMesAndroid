@@ -189,7 +189,7 @@ public final class FoxMesEvents {
                 FoxMesChatAppearance.refreshDefault(runtime);
                 return chatsRefreshed(runtime, seq);
             case "chat.pinned":
-                return chatsRefreshed(runtime, seq);
+                return pinnedChanged(runtime, data, seq);
             case "chat.typing":
                 typing(runtime, data);
                 return false;
@@ -293,6 +293,38 @@ public final class FoxMesEvents {
         TL_update.TL_updateDeleteMessages update = new TL_update.TL_updateDeleteMessages();
         update.messages.add(id);
         dispatch(runtime, Collections.singletonList(update), new ArrayList<>(), seq);
+        return true;
+    }
+
+    private boolean pinnedChanged(FoxMesRuntime runtime, JsonObject data, long seq) throws IOException {
+        long chatId = chatIdOf(data);
+        long peer = ensurePeer(runtime, chatId);
+        if (peer == 0) {
+            return false;
+        }
+        FoxMesPins.Change change = FoxMesPins.replace(runtime.store(), chatId, FoxMesJson.parse(data, FoxMesModels.PinnedState.class));
+        if (change == null) {
+            return false;
+        }
+        ArrayList<TLRPC.Update> updates = new ArrayList<>();
+        if (!change.removed.isEmpty()) {
+            TL_update.TL_updatePinnedMessages update = new TL_update.TL_updatePinnedMessages();
+            update.pinned = false;
+            update.peer = FoxMesTL.peer(peer);
+            update.messages.addAll(change.removed);
+            updates.add(update);
+        }
+        if (!change.added.isEmpty()) {
+            TL_update.TL_updatePinnedMessages update = new TL_update.TL_updatePinnedMessages();
+            update.pinned = true;
+            update.peer = FoxMesTL.peer(peer);
+            update.messages.addAll(change.added);
+            updates.add(update);
+        }
+        if (updates.isEmpty()) {
+            return false;
+        }
+        dispatch(runtime, updates, runtime.tlUsers(Collections.singletonList(peer)), seq);
         return true;
     }
 

@@ -525,6 +525,8 @@ public final class FoxMesModels {
         public List<Integer> messageIds;
         @SerializedName("top_message_id")
         public int topMessageId;
+        @SerializedName("pin_revision")
+        public long pinRevision;
 
         public List<Integer> messageIds() {
             return list(messageIds);

@@ -59,7 +59,7 @@ public final class FoxMesChatAppearance {
     public static class ThemeState { public String theme_emoticon; public long revision; }
     public static class Appearance { public ThemeState theme; public WallpaperState wallpaper; }
     public static class AppearanceResult extends Appearance { public Message message; }
-    public static class Action { public String type, theme_emoticon; public WallpaperState wallpaper; public boolean for_both; }
+    public static class Action { public String type, theme_emoticon; public WallpaperState wallpaper; public boolean for_both; public int message_id; }
     public static class Settings {
         public String base_theme;
         public int accent_color;

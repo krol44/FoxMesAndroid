@@ -410,9 +410,18 @@ public final class FoxMesTL {
         }
         boolean out = source.senderId == self;
         if (source.action != null && context instanceof FoxMesRuntime) {
-            TLRPC.MessageAction action = FoxMesChatAppearance.action((FoxMesRuntime) context, source.action);
+            boolean pinned = "pinned".equals(source.action.type);
+            TLRPC.MessageAction action = pinned ? new TLRPC.TL_messageActionPinMessage() : FoxMesChatAppearance.action((FoxMesRuntime) context, source.action);
             if (action != null) {
-                TLRPC.TL_messageService service = new TLRPC.TL_messageService();service.id = source.id;service.out = out;service.from_id = peer(source.senderId);service.flags = TLObject.setFlag(service.flags, FLAG_8, true);service.peer_id = peer(peerUser);service.date = FoxMesJson.unixTimeOrNow(source.createdAt);service.action = action;service.dialog_id = peerUser;return service;
+                TLRPC.TL_messageService service = new TLRPC.TL_messageService();service.id = source.id;service.out = out;service.from_id = peer(source.senderId);service.flags = TLObject.setFlag(service.flags, FLAG_8, true);service.peer_id = peer(peerUser);service.date = FoxMesJson.unixTimeOrNow(source.createdAt);service.action = action;service.dialog_id = peerUser;
+                if (pinned && source.action.message_id > 0) {
+                    TLRPC.TL_messageReplyHeader header = new TLRPC.TL_messageReplyHeader();
+                    header.reply_to_msg_id = source.action.message_id;
+                    header.flags = TLObject.setFlag(header.flags, FLAG_4, true);
+                    service.reply_to = header;
+                    service.flags = TLObject.setFlag(service.flags, FLAG_3, true);
+                }
+                return service;
             }
         }
         CallInfo call = source.call;
