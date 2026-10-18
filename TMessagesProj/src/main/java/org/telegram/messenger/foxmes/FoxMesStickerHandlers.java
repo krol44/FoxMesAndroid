@@ -2,49 +2,27 @@ package org.telegram.messenger.foxmes;
 
 import android.text.TextUtils;
 
-import org.telegram.messenger.AndroidUtilities;
-import org.telegram.messenger.ApplicationLoader;
-import org.telegram.messenger.MessageObject;
-import org.telegram.messenger.MessagesController;
-
+import org.telegram.messenger.foxmes.FoxMesModels.EmojiDocument;
+import org.telegram.messenger.foxmes.FoxMesModels.EmojiGroup;
 import org.telegram.messenger.foxmes.FoxMesModels.Language;
 import org.telegram.messenger.foxmes.FoxMesModels.LanguagePack;
-import org.telegram.messenger.foxmes.FoxMesModels.ReactionCatalog;
 import org.telegram.messenger.foxmes.FoxMesModels.ReactionCatalogItem;
+import org.telegram.messenger.foxmes.FoxMesModels.StickerSet;
+import org.telegram.messenger.foxmes.FoxMesModels.StickerSetsCatalog;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.Vector;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-
-import okhttp3.Request;
-import okhttp3.Response;
 
 final class FoxMesStickerHandlers {
 
-    private static final long EMOJI_PACK_BASE = 0x0F0E5E77L << 32;
-    private static final long STICKER_PACK_BASE = 0x0F0E5E78L << 32;
-    private static final String SHORT_NAME_PREFIX = "foxmes_";
-    private static final int SET_FORMAT = 6;
-    private static final String PREFERENCES = "foxmes_assets";
-    private static final String SIDE_KEY_PREFIX = "side_";
-    private static final int NATIVE_SIZE_LIMIT = 512;
-
-    private static final class AssetInfo {
-        String url;
-        String mime = "image/webp";
-        long size;
-    }
-
-    private static final ConcurrentHashMap<Integer, AssetInfo> assetInfos = new ConcurrentHashMap<>();
-    private static Map<Long, Integer> sides;
+    private static final int SET_FORMAT = 7;
+    private static final int FEATURED_COVERS = 5;
 
     private FoxMesStickerHandlers() {
     }
@@ -55,13 +33,13 @@ final class FoxMesStickerHandlers {
             ArrayList<ReactionCatalogItem> items = new ArrayList<>();
             java.util.HashSet<String> seen = new java.util.HashSet<>();
             int hash = SET_FORMAT;
-            for (ReactionCatalogItem item : sortedCatalog(runtime.ensureCatalog())) {
-                if (TextUtils.isEmpty(item.emoji) || TextUtils.isEmpty(item.assetUrl) || !seen.add(item.emoji)) {
+            for (ReactionCatalogItem item : sortedCatalog(runtime.ensureCatalog().availableReactions())) {
+                if (TextUtils.isEmpty(item.emoji) || TextUtils.isEmpty(item.url) || !seen.add(item.emoji)) {
                     continue;
                 }
                 items.add(item);
                 hash = hash * 31 + item.id;
-                hash = hash * 31 + item.assetUrl.hashCode();
+                hash = hash * 31 + item.url.hashCode();
             }
             if (hash != 0 && req.hash == hash) {
                 r.reply(new TLRPC.TL_messages_availableReactionsNotModified());
@@ -69,9 +47,8 @@ final class FoxMesStickerHandlers {
             }
             TLRPC.TL_messages_availableReactions result = new TLRPC.TL_messages_availableReactions();
             result.hash = hash;
-            probeAll(runtime, items);
             for (ReactionCatalogItem item : items) {
-                TLRPC.Document document = catalogDocument(runtime, item, false);
+                TLRPC.Document document = document(item, false);
                 TLRPC.TL_availableReaction reaction = new TLRPC.TL_availableReaction();
                 reaction.reaction = item.emoji;
                 reaction.title = item.emoji;
@@ -85,10 +62,10 @@ final class FoxMesStickerHandlers {
             r.reply(result);
         });
         transport.on(TLRPC.TL_messages_getTopReactions.class, FoxMesTransport.Lane.IO, r -> {
-            ReactionCatalog catalog = runtime.ensureCatalog();
+            FoxMesModels.ReactionCatalog catalog = runtime.ensureCatalog();
             List<Integer> ids = new ArrayList<>(catalog.topReactions());
             if (ids.isEmpty()) {
-                for (ReactionCatalogItem item : catalog.availableReactions()) {
+                for (ReactionCatalogItem item : sortedCatalog(catalog.availableReactions())) {
                     if (ids.size() >= 12) {
                         break;
                     }
@@ -101,16 +78,22 @@ final class FoxMesStickerHandlers {
         transport.on(TLRPC.TL_messages_getDefaultTagReactions.class, FoxMesTransport.Lane.INLINE, r -> r.reply(reactions(new ArrayList<>())));
         transport.on(TLRPC.TL_messages_getCustomEmojiDocuments.class, FoxMesTransport.Lane.IO, r -> {
             TLRPC.TL_messages_getCustomEmojiDocuments req = (TLRPC.TL_messages_getCustomEmojiDocuments) r.request;
+            ArrayList<Integer> wanted = new ArrayList<>();
+            for (Long id : req.document_id) {
+                if (!FoxMesAppearanceHandlers.isIcon(id) && id > 0 && id <= Integer.MAX_VALUE) {
+                    wanted.add(id.intValue());
+                }
+            }
+            Map<Integer, EmojiDocument> documents = runtime.emojiDocuments(wanted);
             Vector<TLRPC.Document> result = new Vector<>(TLRPC.Document::TLdeserialize);
             for (Long id : req.document_id) {
                 if (FoxMesAppearanceHandlers.isIcon(id)) {
                     result.objects.add(FoxMesAppearanceHandlers.document(runtime, id));
                     continue;
                 }
-                runtime.ensureCatalog();
-                ReactionCatalogItem item = runtime.catalogItem(id);
+                EmojiDocument item = id > 0 && id <= Integer.MAX_VALUE ? documents.get(id.intValue()) : null;
                 if (item != null) {
-                    result.objects.add(catalogDocument(runtime, item, false));
+                    result.objects.add(document(item, false));
                 } else {
                     TLRPC.TL_documentEmpty empty = new TLRPC.TL_documentEmpty();
                     empty.id = id;
@@ -119,8 +102,8 @@ final class FoxMesStickerHandlers {
             }
             r.reply(result);
         });
-        transport.on(TLRPC.TL_messages_getEmojiStickers.class, FoxMesTransport.Lane.IO, r -> r.reply(allSets(runtime, true)));
-        transport.on(TLRPC.TL_messages_getAllStickers.class, FoxMesTransport.Lane.IO, r -> r.reply(allSets(runtime, false)));
+        transport.on(TLRPC.TL_messages_getEmojiStickers.class, FoxMesTransport.Lane.IO, r -> r.reply(installedSets(runtime, true)));
+        transport.on(TLRPC.TL_messages_getAllStickers.class, FoxMesTransport.Lane.IO, r -> r.reply(installedSets(runtime, false)));
         transport.on(TLRPC.TL_messages_getStickerSet.class, FoxMesTransport.Lane.IO, r -> {
             TLRPC.TL_messages_getStickerSet req = (TLRPC.TL_messages_getStickerSet) r.request;
             if (req.stickerset instanceof TLRPC.TL_inputStickerSetEmojiDefaultStatuses) {
@@ -138,15 +121,70 @@ final class FoxMesStickerHandlers {
                 r.reply(set);
                 return;
             }
-            TLRPC.TL_messages_stickerSet set = stickerSet(runtime, req.stickerset);
-            if (set == null) {
+            StickerSetsCatalog catalog = runtime.ensureStickerSets();
+            StickerSet source = find(catalog, req.stickerset);
+            if (source == null) {
                 r.fail(400, "STICKERSET_INVALID");
                 return;
             }
-            r.reply(set);
+            r.reply(fullSet(catalog, source));
         });
-        transport.on(TLRPC.TL_messages_getFeaturedStickers.class, FoxMesTransport.Lane.INLINE, r -> r.reply(new TLRPC.TL_messages_featuredStickers()));
-        transport.on(TLRPC.TL_messages_getFeaturedEmojiStickers.class, FoxMesTransport.Lane.INLINE, r -> r.reply(new TLRPC.TL_messages_featuredStickers()));
+        transport.on(TLRPC.TL_messages_getFeaturedStickers.class, FoxMesTransport.Lane.IO, r -> r.reply(featured(runtime, false)));
+        transport.on(TLRPC.TL_messages_getFeaturedEmojiStickers.class, FoxMesTransport.Lane.IO, r -> r.reply(featured(runtime, true)));
+        transport.on(TLRPC.TL_messages_readFeaturedStickers.class, FoxMesTransport.Lane.INLINE, r -> r.reply(new TLRPC.TL_boolTrue()));
+        transport.on(TLRPC.TL_messages_getArchivedStickers.class, FoxMesTransport.Lane.INLINE, r -> r.reply(new TLRPC.TL_messages_archivedStickers()));
+        transport.on(TLRPC.TL_messages_installStickerSet.class, FoxMesTransport.Lane.IO, r -> {
+            TLRPC.TL_messages_installStickerSet req = (TLRPC.TL_messages_installStickerSet) r.request;
+            StickerSet source = find(runtime.ensureStickerSets(), req.stickerset);
+            if (source == null) {
+                r.fail(400, "STICKERSET_INVALID");
+                return;
+            }
+            runtime.setStickerSetInstalled(source.id, !req.archived);
+            r.reply(new TLRPC.TL_messages_stickerSetInstallResultSuccess());
+        });
+        transport.on(TLRPC.TL_messages_uninstallStickerSet.class, FoxMesTransport.Lane.IO, r -> {
+            TLRPC.TL_messages_uninstallStickerSet req = (TLRPC.TL_messages_uninstallStickerSet) r.request;
+            StickerSet source = find(runtime.ensureStickerSets(), req.stickerset);
+            if (source == null) {
+                r.fail(400, "STICKERSET_INVALID");
+                return;
+            }
+            runtime.setStickerSetInstalled(source.id, false);
+            r.reply(new TLRPC.TL_boolTrue());
+        });
+        transport.on(TLRPC.TL_messages_toggleStickerSets.class, FoxMesTransport.Lane.IO, r -> {
+            TLRPC.TL_messages_toggleStickerSets req = (TLRPC.TL_messages_toggleStickerSets) r.request;
+            StickerSetsCatalog catalog = runtime.ensureStickerSets();
+            for (TLRPC.InputStickerSet input : req.stickersets) {
+                StickerSet source = find(catalog, input);
+                if (source != null) {
+                    runtime.setStickerSetInstalled(source.id, req.unarchive);
+                }
+            }
+            r.reply(new TLRPC.TL_boolTrue());
+        });
+        transport.on(TLRPC.TL_messages_reorderStickerSets.class, FoxMesTransport.Lane.IO, r -> {
+            TLRPC.TL_messages_reorderStickerSets req = (TLRPC.TL_messages_reorderStickerSets) r.request;
+            if (req.masks) {
+                r.reply(new TLRPC.TL_boolTrue());
+                return;
+            }
+            runtime.orderStickerSets(req.emojis, req.order);
+            r.reply(new TLRPC.TL_boolTrue());
+        });
+        transport.on(TLRPC.TL_messages_getEmojiGroups.class, FoxMesTransport.Lane.IO, r -> r.reply(groups(runtime)));
+        transport.on(TLRPC.TL_messages_getEmojiStatusGroups.class, FoxMesTransport.Lane.IO, r -> r.reply(groups(runtime)));
+        transport.on(TLRPC.TL_messages_getEmojiProfilePhotoGroups.class, FoxMesTransport.Lane.IO, r -> r.reply(groups(runtime)));
+        transport.on(TLRPC.TL_messages_getEmojiStickerGroups.class, FoxMesTransport.Lane.IO, r -> r.reply(groups(runtime)));
+        transport.on(TLRPC.TL_messages_getStickers.class, FoxMesTransport.Lane.IO, r -> {
+            TLRPC.TL_messages_getStickers req = (TLRPC.TL_messages_getStickers) r.request;
+            r.reply(byEmoji(runtime, req.emoticon));
+        });
+        transport.on(TLRPC.TL_messages_searchStickers.class, FoxMesTransport.Lane.IO, r -> {
+            TLRPC.TL_messages_searchStickers req = (TLRPC.TL_messages_searchStickers) r.request;
+            r.reply(search(runtime, req.emojis, req.q, req.emoticon));
+        });
         transport.on(TLRPC.TL_messages_getRecentStickers.class, FoxMesTransport.Lane.INLINE, r -> r.reply(new TLRPC.TL_messages_recentStickers()));
         transport.on(TLRPC.TL_messages_getFavedStickers.class, FoxMesTransport.Lane.IO, r -> runtime.stickerFavorites().load(r));
         transport.on(TLRPC.TL_messages_faveSticker.class, FoxMesTransport.Lane.INLINE, r -> runtime.stickerFavorites().toggle(r));
@@ -178,8 +216,8 @@ final class FoxMesStickerHandlers {
         });
     }
 
-    private static List<ReactionCatalogItem> sortedCatalog(ReactionCatalog catalog) {
-        ArrayList<ReactionCatalogItem> items = new ArrayList<>(catalog.availableReactions());
+    private static List<ReactionCatalogItem> sortedCatalog(List<ReactionCatalogItem> source) {
+        ArrayList<ReactionCatalogItem> items = new ArrayList<>(source);
         java.util.Collections.sort(items, (a, b) -> Integer.compare(a.order, b.order));
         return items;
     }
@@ -193,267 +231,49 @@ final class FoxMesStickerHandlers {
         return result;
     }
 
-
-    static long fnv1a(String value) {
-        long hash = 0x811C9DC5L;
-        for (byte b : value.getBytes(StandardCharsets.UTF_8)) {
-            hash ^= (b & 0xFF);
-            hash = (hash * 0x01000193L) & 0xFFFFFFFFL;
-        }
-        return hash;
+    static long documentId(EmojiDocument item, boolean asSticker) {
+        return asSticker ? (item.id | FoxMesTL.STICKER_BIT) : item.id;
     }
 
-    private static long packId(String category, boolean emoji) {
-        return (emoji ? EMOJI_PACK_BASE : STICKER_PACK_BASE) | fnv1a(category);
-    }
-
-    private static String category(ReactionCatalogItem item) {
-        return TextUtils.isEmpty(item.category) ? "FoxMes" : item.category;
-    }
-
-    private static AssetInfo assetInfo(FoxMesRuntime runtime, ReactionCatalogItem item) throws IOException {
-        AssetInfo known = assetInfos.get(item.id);
-        if (known != null) {
-            return known;
-        }
-        String url = FoxMesHttp.absolute(item.assetUrl);
-        AssetInfo info = new AssetInfo();
-        info.url = url;
-        try {
-            Probe source = probe(runtime, url);
-            if (source == null) {
-                FoxMesLog.w("asset " + item.id + ": no answer for the source");
-                return info;
-            }
-            info.size = source.size;
-            if (source.webm) {
-                info.mime = "video/webm";
-            } else if (source.webp) {
-                String renditionUrl = url + "/-/emoji_webm/";
-                Probe rendition = probe(runtime, renditionUrl);
-                if (rendition != null && rendition.webm) {
-                    info.url = renditionUrl;
-                    info.mime = "video/webm";
-                    info.size = rendition.size;
-                }
-            }
-            rememberSide(item.id, source.side);
-        } catch (IOException e) {
-            FoxMesLog.w("asset " + item.id + ": " + e.getMessage());
-            throw e;
-        } catch (Exception e) {
-            FoxMesLog.w("asset " + item.id + ": " + e.getMessage());
-            throw new IOException("asset " + item.id, e);
-        }
-        assetInfos.put(item.id, info);
-        return info;
-    }
-
-    private static android.content.SharedPreferences preferences() {
-        return ApplicationLoader.applicationContext.getSharedPreferences(PREFERENCES, android.content.Context.MODE_PRIVATE);
-    }
-
-    private static synchronized Map<Long, Integer> sides() {
-        if (sides == null) {
-            sides = new HashMap<>();
-            for (Map.Entry<String, ?> entry : preferences().getAll().entrySet()) {
-                if (entry.getKey().startsWith(SIDE_KEY_PREFIX) && entry.getValue() instanceof Integer) {
-                    try {
-                        sides.put(Long.parseLong(entry.getKey().substring(SIDE_KEY_PREFIX.length())), (Integer) entry.getValue());
-                    } catch (NumberFormatException ignore) {
-                    }
-                }
-            }
-        }
-        return sides;
-    }
-
-    private static synchronized void rememberSide(long id, int side) {
-        Integer known = sides().put(id, side);
-        if (known == null || known != side) {
-            preferences().edit().putInt(SIDE_KEY_PREFIX + id, side).apply();
-        }
-    }
-
-    private static synchronized int side(long id) {
-        Integer side = sides().get(id);
-        return side != null ? side : 0;
-    }
-
-    static float chatScale(int account, MessageObject message, int drawnSide) {
-        TLRPC.Document document = message.getDocument();
-        if (document == null || drawnSide <= 0) {
-            return 1f;
-        }
-        FoxMesFileRef ref = FoxMesFileRef.decode(document.file_reference);
-        if (ref == null || !ref.has(FoxMesFileRef.FLAG_CATALOG)) {
-            return 1f;
-        }
-        float zoom = MessagesController.getInstance(account).animatedEmojisZoom;
-        float stickerScale = message.isAnimatedEmoji() && zoom > 0 ? 1f / zoom : 1f;
-        int side = side(document.id & ~FoxMesTL.STICKER_BIT);
-        if (side > 0 && side < NATIVE_SIZE_LIMIT) {
-            return Math.min(stickerScale, AndroidUtilities.dp(side) / (float) drawnSide);
-        }
-        return stickerScale;
-    }
-
-    private static void probeAll(FoxMesRuntime runtime, List<ReactionCatalogItem> items) throws IOException {
-        ArrayList<java.util.concurrent.Callable<AssetInfo>> tasks = new ArrayList<>();
-        for (ReactionCatalogItem item : items) {
-            if (!assetInfos.containsKey(item.id)) {
-                tasks.add(() -> assetInfo(runtime, item));
-            }
-        }
-        if (tasks.isEmpty()) {
-            return;
-        }
-        try {
-            for (java.util.concurrent.Future<AssetInfo> future : runtime.downloads.invokeAll(tasks)) {
-                future.get();
-            }
-        } catch (java.util.concurrent.ExecutionException e) {
-            throw e.getCause() instanceof IOException ? (IOException) e.getCause() : new IOException(e.getCause());
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException(e);
-        }
-    }
-
-    private static final class Probe {
-        boolean webm;
-        boolean webp;
-        int side;
-        long size;
-    }
-
-    private static Probe probe(FoxMesRuntime runtime, String url) throws IOException {
-        Request.Builder builder = new Request.Builder().url(url).get().header("Range", "bytes=0-29");
-        if (FoxMesConfiguration.allowsBearer(url)) {
-            String token = runtime.http.token();
-            if (token != null) {
-                builder.header("Authorization", "Bearer " + token);
-            }
-        }
-        okhttp3.HttpUrl parsed = okhttp3.HttpUrl.get(url);
-        try (Response response = FoxMesHttp.clientFor(parsed, true).newCall(builder.build()).execute()) {
-            if (response.code() != 200 && response.code() != 206) {
-                FoxMesLog.w("asset probe " + url + ": HTTP " + response.code());
-                return null;
-            }
-            byte[] head = new byte[0];
-            okhttp3.ResponseBody body = response.body();
-            if (body != null) {
-                java.io.InputStream in = body.byteStream();
-                byte[] buffer = new byte[30];
-                int read = 0;
-                while (read < buffer.length) {
-                    int n = in.read(buffer, read, buffer.length - read);
-                    if (n < 0) {
-                        break;
-                    }
-                    read += n;
-                }
-                head = java.util.Arrays.copyOf(buffer, read);
-            }
-            String type = response.header("Content-Type");
-            Probe probe = new Probe();
-            probe.webm = type != null && type.toLowerCase(Locale.US).startsWith("video/webm")
-                    || head.length >= 4 && (head[0] & 0xff) == 0x1a && (head[1] & 0xff) == 0x45 && (head[2] & 0xff) == 0xdf && (head[3] & 0xff) == 0xa3;
-            probe.webp = head.length >= 12 && new String(head, 0, 4, StandardCharsets.US_ASCII).equals("RIFF")
-                    && new String(head, 8, 4, StandardCharsets.US_ASCII).equals("WEBP");
-            probe.side = imageSide(head);
-            probe.size = totalSize(response);
-            return probe;
-        }
-    }
-
-    private static int imageSide(byte[] head) {
-        if (head.length >= 24 && (head[0] & 0xff) == 0x89 && head[1] == 'P' && head[2] == 'N' && head[3] == 'G') {
-            return Math.max(bigEndian(head, 16), bigEndian(head, 20));
-        }
-        if (head.length < 30 || !new String(head, 0, 4, StandardCharsets.US_ASCII).equals("RIFF")
-                || !new String(head, 8, 4, StandardCharsets.US_ASCII).equals("WEBP")) {
-            return 0;
-        }
-        String chunk = new String(head, 12, 4, StandardCharsets.US_ASCII);
-        switch (chunk) {
-            case "VP8X":
-                return Math.max(littleEndian24(head, 24), littleEndian24(head, 27)) + 1;
-            case "VP8 ":
-                return Math.max(((head[26] & 0xff) | (head[27] & 0xff) << 8) & 0x3fff,
-                        ((head[28] & 0xff) | (head[29] & 0xff) << 8) & 0x3fff);
-            case "VP8L": {
-                int bits = (head[21] & 0xff) | (head[22] & 0xff) << 8 | (head[23] & 0xff) << 16 | (head[24] & 0xff) << 24;
-                return Math.max((bits & 0x3fff) + 1, ((bits >> 14) & 0x3fff) + 1);
-            }
-            default:
-                return 0;
-        }
-    }
-
-    private static int bigEndian(byte[] bytes, int offset) {
-        return (bytes[offset] & 0xff) << 24 | (bytes[offset + 1] & 0xff) << 16 | (bytes[offset + 2] & 0xff) << 8 | (bytes[offset + 3] & 0xff);
-    }
-
-    private static int littleEndian24(byte[] bytes, int offset) {
-        return (bytes[offset] & 0xff) | (bytes[offset + 1] & 0xff) << 8 | (bytes[offset + 2] & 0xff) << 16;
-    }
-
-    private static long totalSize(Response response) {
-        String range = response.header("Content-Range");
-        if (range != null) {
-            int slash = range.lastIndexOf('/');
-            if (slash >= 0) {
-                try {
-                    return Long.parseLong(range.substring(slash + 1).trim());
-                } catch (NumberFormatException ignore) {
-                }
-            }
-        }
-        if (response.code() == 200) {
-            String length = response.header("Content-Length");
-            if (length != null) {
-                try {
-                    return Long.parseLong(length.trim());
-                } catch (NumberFormatException ignore) {
-                }
-            }
-        }
-        return 0;
-    }
-
-    static TLRPC.Document catalogDocument(FoxMesRuntime runtime, ReactionCatalogItem item, boolean asSticker) throws IOException {
-        AssetInfo info = assetInfo(runtime, item);
-        String mime = info.mime;
-        boolean webm = "video/webm".equals(mime);
+    static TLRPC.Document document(EmojiDocument item, boolean asSticker) {
+        boolean webm = item.video();
+        String mime = webm ? "video/webm" : "image/webp";
+        int width = item.width > 0 ? item.width : (asSticker ? 512 : 100);
+        int height = item.height > 0 ? item.height : (asSticker ? 512 : 100);
+        String url = FoxMesHttp.absolute(item.url);
         FoxMesFileRef ref = new FoxMesFileRef();
         ref.flags = FoxMesFileRef.FLAG_CATALOG;
-        ref.url = info.url;
+        ref.url = url;
         ref.mime = mime;
         TLRPC.TL_document document = new TLRPC.TL_document();
         if (!webm) {
-            ref.posterUrl = info.url;
+            ref.posterUrl = url;
             TLRPC.TL_photoSize thumb = new TLRPC.TL_photoSize();
             thumb.type = "m";
-            thumb.w = 100;
-            thumb.h = 100;
+            thumb.w = width;
+            thumb.h = height;
             document.thumbs.add(thumb);
             document.flags = TLObject.setFlag(document.flags, TLObject.FLAG_0, true);
         }
-        document.id = asSticker ? (item.id | FoxMesTL.STICKER_BIT) : item.id;
+        document.id = documentId(item, asSticker);
         document.access_hash = FoxMesTL.accessHash(document.id);
         document.file_reference = ref.encode();
         document.date = FoxMesHandlers.now();
         document.mime_type = mime;
-        document.size = info.size;
+        document.size = item.size;
         document.dc_id = FoxMesTL.DC;
         TLRPC.TL_documentAttributeFilename fileName = new TLRPC.TL_documentAttributeFilename();
         fileName.file_name = (asSticker ? "sticker" : "emoji") + (webm ? ".webm" : ".webp");
         document.attributes.add(fileName);
-        TLRPC.TL_inputStickerSetID set = new TLRPC.TL_inputStickerSetID();
-        set.id = packId(category(item), !asSticker);
-        set.access_hash = FoxMesTL.accessHash(set.id);
+        TLRPC.InputStickerSet set;
+        if (item.setId > 0) {
+            TLRPC.TL_inputStickerSetID byId = new TLRPC.TL_inputStickerSetID();
+            byId.id = item.setId;
+            byId.access_hash = FoxMesTL.accessHash(byId.id);
+            set = byId;
+        } else {
+            set = new TLRPC.TL_inputStickerSetEmpty();
+        }
         if (asSticker) {
             TLRPC.TL_documentAttributeSticker sticker = new TLRPC.TL_documentAttributeSticker();
             sticker.alt = item.emoji != null ? item.emoji : "";
@@ -463,79 +283,203 @@ final class FoxMesStickerHandlers {
             TLRPC.TL_documentAttributeCustomEmoji emoji = new TLRPC.TL_documentAttributeCustomEmoji();
             emoji.alt = item.emoji != null ? item.emoji : "";
             emoji.stickerset = set;
+            emoji.free = true;
+            emoji.text_color = item.textColor;
             document.attributes.add(emoji);
         }
         if (webm) {
             TLRPC.TL_documentAttributeVideo video = new TLRPC.TL_documentAttributeVideo();
-            video.w = 100;
-            video.h = 100;
+            video.w = width;
+            video.h = height;
             video.duration = 3;
             document.attributes.add(video);
         } else {
             TLRPC.TL_documentAttributeImageSize size = new TLRPC.TL_documentAttributeImageSize();
-            size.w = 100;
-            size.h = 100;
+            size.w = width;
+            size.h = height;
             document.attributes.add(size);
         }
         return FoxMesTL.normalizeDocument(document);
     }
 
-    private static TLRPC.TL_stickerSet set(String category, List<ReactionCatalogItem> items, boolean emoji) {
+    private static TLRPC.TL_stickerSet set(StickerSetsCatalog catalog, StickerSet source) {
+        boolean emoji = source.emoji();
         TLRPC.TL_stickerSet set = new TLRPC.TL_stickerSet();
-        set.id = packId(category, emoji);
+        set.id = source.id;
         set.access_hash = FoxMesTL.accessHash(set.id);
-        set.title = category;
-        set.short_name = SHORT_NAME_PREFIX + (emoji ? "emoji_" : "stickers_") + Long.toHexString(fnv1a(category));
-        set.count = items.size();
+        set.title = TextUtils.isEmpty(source.title) ? "FoxMes" : source.title;
+        set.short_name = source.shortName != null ? source.shortName : "";
+        set.count = source.items().size();
         int hash = SET_FORMAT;
-        for (ReactionCatalogItem item : items) {
+        for (EmojiDocument item : source.items()) {
             hash = hash * 31 + item.id;
-            hash = hash * 31 + (item.assetUrl != null ? item.assetUrl.hashCode() : 0);
+            hash = hash * 31 + (item.url != null ? item.url.hashCode() : 0);
         }
         set.hash = hash;
         set.emojis = emoji;
-        set.installed = true;
         set.official = true;
-        set.installed_date = FoxMesHandlers.now();
+        set.installed = catalog.installed != null && catalog.installed.of(emoji).contains(source.id);
+        if (set.installed) {
+            set.installed_date = FoxMesHandlers.now();
+            set.flags = TLObject.setFlag(set.flags, TLObject.FLAG_0, true);
+        }
+        if (!source.items().isEmpty()) {
+            set.thumb_document_id = documentId(source.items().get(0), !emoji);
+            set.flags = TLObject.setFlag(set.flags, TLObject.FLAG_8, true);
+        }
         return set;
     }
 
-    private static TLRPC.TL_messages_allStickers allSets(FoxMesRuntime runtime, boolean emoji) throws IOException {
-        runtime.ensureCatalog();
-        TLRPC.TL_messages_allStickers result = new TLRPC.TL_messages_allStickers();
-        for (Map.Entry<String, List<ReactionCatalogItem>> entry : runtime.catalogCategories().entrySet()) {
-            result.sets.add(set(entry.getKey(), entry.getValue(), emoji));
+    private static TLRPC.TL_messages_stickerSet fullSet(StickerSetsCatalog catalog, StickerSet source) {
+        boolean emoji = source.emoji();
+        TLRPC.TL_messages_stickerSet result = new TLRPC.TL_messages_stickerSet();
+        result.set = set(catalog, source);
+        for (EmojiDocument item : source.items()) {
+            TLRPC.Document document = document(item, !emoji);
+            result.documents.add(document);
+            TLRPC.TL_stickerPack pack = new TLRPC.TL_stickerPack();
+            pack.emoticon = item.emoji != null ? item.emoji : "";
+            pack.documents.add(document.id);
+            result.packs.add(pack);
         }
-        result.hash2 = result.sets.hashCode();
         return result;
     }
 
-    private static TLRPC.TL_messages_stickerSet stickerSet(FoxMesRuntime runtime, TLRPC.InputStickerSet input) throws IOException {
-        runtime.ensureCatalog();
-        for (Map.Entry<String, List<ReactionCatalogItem>> entry : runtime.catalogCategories().entrySet()) {
-            for (int kind = 0; kind < 2; kind++) {
-                boolean emoji = kind == 0;
-                TLRPC.TL_stickerSet set = set(entry.getKey(), entry.getValue(), emoji);
-                boolean matches = input instanceof TLRPC.TL_inputStickerSetID && input.id == set.id
-                        || input instanceof TLRPC.TL_inputStickerSetShortName && set.short_name.equalsIgnoreCase(input.short_name);
-                if (!matches) {
-                    continue;
-                }
-                TLRPC.TL_messages_stickerSet result = new TLRPC.TL_messages_stickerSet();
-                result.set = set;
-                probeAll(runtime, entry.getValue());
-                for (ReactionCatalogItem item : entry.getValue()) {
-                    TLRPC.Document document = catalogDocument(runtime, item, !emoji);
-                    result.documents.add(document);
-                    TLRPC.TL_stickerPack pack = new TLRPC.TL_stickerPack();
-                    pack.emoticon = item.emoji != null ? item.emoji : "";
-                    pack.documents.add(document.id);
-                    result.packs.add(pack);
-                }
-                return result;
+    private static StickerSet find(StickerSetsCatalog catalog, TLRPC.InputStickerSet input) {
+        for (StickerSet source : catalog.sets()) {
+            if (input instanceof TLRPC.TL_inputStickerSetID && input.id == source.id
+                    || input instanceof TLRPC.TL_inputStickerSetShortName && source.shortName != null && source.shortName.equalsIgnoreCase(input.short_name)) {
+                return source;
             }
         }
         return null;
+    }
+
+    private static TLRPC.TL_messages_emojiGroups groups(FoxMesRuntime runtime) throws IOException {
+        TLRPC.TL_messages_emojiGroups result = new TLRPC.TL_messages_emojiGroups();
+        int hash = SET_FORMAT;
+        for (EmojiGroup source : runtime.ensureStickerSets().groups()) {
+            if (source.icon == null || source.emoticons == null) {
+                continue;
+            }
+            TLRPC.TL_emojiGroup group = new TLRPC.TL_emojiGroup();
+            group.title = source.title != null ? source.title : "";
+            group.icon_emoji_id = documentId(source.icon, false);
+            group.emoticons.addAll(source.emoticons);
+            result.groups.add(group);
+            hash = hash * 31 + (int) group.icon_emoji_id;
+            hash = hash * 31 + group.emoticons.hashCode();
+        }
+        result.hash = hash;
+        return result;
+    }
+
+    private static String bareEmoji(String value) {
+        return value == null ? "" : value.replace("\uFE0F", "").trim();
+    }
+
+    private static TLRPC.TL_messages_stickers byEmoji(FoxMesRuntime runtime, String emoticon) throws IOException {
+        StickerSetsCatalog catalog = runtime.ensureStickerSets();
+        String needle = bareEmoji(emoticon);
+        ArrayList<StickerSet> order = new ArrayList<>();
+        if (catalog.installed != null) {
+            for (Integer id : catalog.installed.of(false)) {
+                for (StickerSet source : catalog.sets()) {
+                    if (source.id == id && !source.emoji()) {
+                        order.add(source);
+                    }
+                }
+            }
+        }
+        for (StickerSet source : catalog.sets()) {
+            if (!source.emoji() && !order.contains(source)) {
+                order.add(source);
+            }
+        }
+        TLRPC.TL_messages_stickers result = new TLRPC.TL_messages_stickers();
+        for (StickerSet source : order) {
+            for (EmojiDocument item : source.items()) {
+                if (!needle.isEmpty() && needle.equals(bareEmoji(item.emoji))) {
+                    result.stickers.add(document(item, true));
+                }
+            }
+        }
+        return result;
+    }
+
+    private static TLRPC.TL_messages_foundStickers search(FoxMesRuntime runtime, boolean emoji, String query, String emoticon) throws IOException {
+        String haystack = bareEmoji((emoticon != null ? emoticon : "") + (query != null ? query : ""));
+        String needle = query != null ? query.trim().toLowerCase(Locale.ROOT) : "";
+        TLRPC.TL_messages_foundStickers result = new TLRPC.TL_messages_foundStickers();
+        for (StickerSet source : runtime.ensureStickerSets().sets()) {
+            if (source.emoji() != emoji) {
+                continue;
+            }
+            boolean byTitle = !needle.isEmpty() && source.title != null && source.title.toLowerCase(Locale.ROOT).contains(needle);
+            for (EmojiDocument item : source.items()) {
+                String alt = bareEmoji(item.emoji);
+                if (byTitle || !alt.isEmpty() && haystack.contains(alt)) {
+                    result.stickers.add(document(item, !emoji));
+                }
+            }
+        }
+        return result;
+    }
+
+    private static TLRPC.TL_messages_allStickers installedSets(FoxMesRuntime runtime, boolean emoji) throws IOException {
+        StickerSetsCatalog catalog = runtime.ensureStickerSets();
+        TLRPC.TL_messages_allStickers result = new TLRPC.TL_messages_allStickers();
+        if (catalog.installed != null) {
+            for (Integer id : catalog.installed.of(emoji)) {
+                for (StickerSet source : catalog.sets()) {
+                    if (source.id == id && source.emoji() == emoji) {
+                        result.sets.add(set(catalog, source));
+                    }
+                }
+            }
+        }
+        long hash = SET_FORMAT;
+        for (TLRPC.StickerSet set : result.sets) {
+            hash = hash * 31 + set.id;
+            hash = hash * 31 + set.hash;
+        }
+        result.hash2 = hash;
+        return result;
+    }
+
+    private static TLRPC.TL_messages_featuredStickers featured(FoxMesRuntime runtime, boolean emoji) throws IOException {
+        StickerSetsCatalog catalog = runtime.ensureStickerSets();
+        TLRPC.TL_messages_featuredStickers result = new TLRPC.TL_messages_featuredStickers();
+        long hash = SET_FORMAT;
+        for (StickerSet source : catalog.sets()) {
+            if (source.emoji() != emoji || catalog.installed != null && catalog.installed.of(emoji).contains(source.id)) {
+                continue;
+            }
+            TLRPC.StickerSetCovered covered;
+            if (emoji) {
+                TLRPC.TL_stickerSetFullCovered full = new TLRPC.TL_stickerSetFullCovered();
+                TLRPC.TL_messages_stickerSet set = fullSet(catalog, source);
+                full.set = set.set;
+                full.packs = set.packs;
+                full.documents = set.documents;
+                covered = full;
+            } else {
+                TLRPC.TL_stickerSetMultiCovered multi = new TLRPC.TL_stickerSetMultiCovered();
+                multi.set = set(catalog, source);
+                for (EmojiDocument item : source.items()) {
+                    if (multi.covers.size() >= FEATURED_COVERS) {
+                        break;
+                    }
+                    multi.covers.add(document(item, true));
+                }
+                covered = multi;
+            }
+            result.sets.add(covered);
+            hash = hash * 31 + source.id;
+        }
+        result.count = result.sets.size();
+        result.hash = hash;
+        return result;
     }
 
 

@@ -663,6 +663,10 @@ public class StickerCategoriesListView extends RecyclerListView {
                 loadProgress = 1;
                 AnimatedEmojiDrawable.getDocumentFetcher(UserConfig.selectedAccount)
                     .fetchDocument(category.documentId, document -> {
+                        if (org.telegram.ui.foxmes.FoxMesUi.setStaticCategoryIcon(this, document)) {
+                            onLoaded();
+                            return;
+                        }
                         setOnlyLastFrame(!animated);
                         setAnimation(document, 24, 24);
                         playAnimation();

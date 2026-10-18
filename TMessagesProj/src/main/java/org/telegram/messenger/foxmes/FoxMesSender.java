@@ -94,6 +94,9 @@ public final class FoxMesSender {
             sendReminder(r, runtime, chatId, peer, body, req.schedule_date, Collections.singletonList(req.random_id));
             return;
         }
+        if (req.update_stickersets_order) {
+            body.put("update_sticker_sets_order", true);
+        }
         deliver(r, runtime, chatId, peer, body, Collections.singletonList(req.random_id), Collections.singletonList(nonce));
     }
 
@@ -418,11 +421,9 @@ public final class FoxMesSender {
                     .put("address", media instanceof TLRPC.TL_inputMediaVenue && !TextUtils.isEmpty(media.address) ? media.address : null));
         } else if (media instanceof TLRPC.TL_inputMediaDocument && isCatalogSticker((TLRPC.TL_inputMediaDocument) media)) {
             long id = ((TLRPC.TL_inputMediaDocument) media).id.id & ~FoxMesTL.STICKER_BIT;
-            FoxMesModels.ReactionCatalogItem item = runtime.catalogItem(id);
-            String alt = item != null && !TextUtils.isEmpty(item.emoji) ? item.emoji : "🙂";
-            ArrayList<FoxMesJson.Body> entities = new ArrayList<>();
-            entities.add(FoxMesJson.body().put("type", "custom_emoji").put("offset", 0).put("length", alt.length()).put("emoji_id", id));
-            body.put("text", alt).putBodies("entities", entities);
+            body.object.remove("text");
+            body.object.remove("entities");
+            body.put("sticker_id", id);
         } else if (media instanceof TLRPC.TL_inputMediaDocument && isSavedGif((TLRPC.TL_inputMediaDocument) media)) {
             FoxMesFileRef ref = FoxMesFileRef.decode(((TLRPC.TL_inputMediaDocument) media).id.file_reference);
             attach(body, Collections.singletonList(uploadSavedGif(runtime, ref, chatId)));
@@ -445,6 +446,9 @@ public final class FoxMesSender {
         if (req.schedule_date != 0) {
             sendReminder(r, runtime, chatId, peer, body, req.schedule_date, Collections.singletonList(req.random_id));
             return;
+        }
+        if (req.update_stickersets_order) {
+            body.put("update_sticker_sets_order", true);
         }
         deliver(r, runtime, chatId, peer, body, Collections.singletonList(req.random_id), Collections.singletonList(nonce));
     }

@@ -29,11 +29,6 @@ public final class FoxMesSession {
             }
 
             @Override
-            public boolean isCatalogReaction(int emojiId) {
-                return true;
-            }
-
-            @Override
             public void recordPhotoUrl(long photoId, String url) {
                 store.putPhotoUrl(photoId, url);
             }

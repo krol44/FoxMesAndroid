@@ -23,6 +23,30 @@ import org.telegram.ui.Components.UnreadCounterTextView;
 
 public final class FoxMesUi {
 
+    public static boolean setStaticCategoryIcon(android.widget.ImageView view, TLRPC.Document document) {
+        if (document == null || "application/x-tgsticker".equals(document.mime_type)) {
+            return false;
+        }
+        org.telegram.ui.Components.AnimatedEmojiDrawable drawable = org.telegram.ui.Components.AnimatedEmojiDrawable.make(
+                UserConfig.selectedAccount, org.telegram.ui.Components.AnimatedEmojiDrawable.CACHE_TYPE_KEYBOARD, document);
+        view.setImageDrawable(drawable);
+        if (view.isAttachedToWindow()) {
+            drawable.addView(view);
+        }
+        view.addOnAttachStateChangeListener(new android.view.View.OnAttachStateChangeListener() {
+            @Override
+            public void onViewAttachedToWindow(android.view.View v) {
+                drawable.addView(v);
+            }
+
+            @Override
+            public void onViewDetachedFromWindow(android.view.View v) {
+                drawable.removeView(v);
+            }
+        });
+        return true;
+    }
+
     public static final int CREATE_MEET = 0x0F0E0001;
     public static final int EDIT_CONTACT = 0x0F0E0002;
 

@@ -86,7 +86,9 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
     private volatile Me me;
     volatile boolean statusesSupported;
     private volatile ReactionCatalog catalog;
-    private volatile Set<Integer> catalogIds = Collections.emptySet();
+    private volatile FoxMesModels.StickerSetsCatalog stickerSets;
+    private volatile Map<Integer, FoxMesModels.EmojiDocument> stickerSetDocuments = Collections.emptyMap();
+    private final ConcurrentHashMap<Integer, FoxMesModels.EmojiDocument> foreignDocuments = new ConcurrentHashMap<>();
     private volatile Snapshot snapshot;
     private volatile boolean started;
     private volatile FoxMesStickerFavorites stickerFavorites;
@@ -175,12 +177,6 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
     public long peerForChat(long chatId) {
         Long peer = chatToPeer.get(chatId);
         return peer != null ? peer : 0;
-    }
-
-    @Override
-    public boolean isCatalogReaction(int emojiId) {
-        Set<Integer> ids = catalogIds;
-        return ids.isEmpty() || ids.contains(emojiId);
     }
 
     @Override
@@ -468,9 +464,6 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
         return state != null && state[2] != 0;
     }
 
-    public float stickerScale(org.telegram.messenger.MessageObject message, int drawnSide) {
-        return message != null ? FoxMesStickerHandlers.chatScale(account, message, drawnSide) : 1f;
-    }
 
     public boolean applyPresence(long userId, long chatId, boolean online, long revision) {
         if (userId == 0 || userId == selfId() || peerForChat(chatId) != userId) {
@@ -964,19 +957,6 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
         return catalog;
     }
 
-    public ReactionCatalogItem catalogItem(long id) {
-        ReactionCatalog current = catalog;
-        if (current == null) {
-            return null;
-        }
-        for (ReactionCatalogItem item : current.availableReactions()) {
-            if (item.id == id) {
-                return item;
-            }
-        }
-        return null;
-    }
-
     public ReactionCatalogItem catalogItemForEmoji(String emoji) {
         ReactionCatalog current = catalog;
         if (current == null || emoji == null) {
@@ -1005,41 +985,113 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
         } catch (Exception e) {
             FoxMesLog.w("reaction catalog: " + e.getMessage());
         }
+        try {
+            setStickerSets(api.stickerSets());
+        } catch (Exception e) {
+            FoxMesLog.w("sticker sets: " + e.getMessage());
+        }
     }
 
     private void setCatalog(ReactionCatalog value) {
         catalog = value;
-        LinkedHashSet<Integer> ids = new LinkedHashSet<>();
-        if (value != null) {
-            for (ReactionCatalogItem item : value.availableReactions()) {
-                ids.add(item.id);
+    }
+
+    public FoxMesModels.StickerSetsCatalog ensureStickerSets() throws IOException {
+        FoxMesModels.StickerSetsCatalog current = stickerSets;
+        if (current == null) {
+            current = api.stickerSets();
+            setStickerSets(current);
+        }
+        return current;
+    }
+
+    private void setStickerSets(FoxMesModels.StickerSetsCatalog value) {
+        if (value == null) {
+            return;
+        }
+        HashMap<Integer, FoxMesModels.EmojiDocument> documents = new HashMap<>();
+        for (FoxMesModels.StickerSet set : value.sets()) {
+            for (FoxMesModels.EmojiDocument item : set.items()) {
+                documents.put(item.id, item);
             }
         }
-        catalogIds = ids;
+        synchronized (this) {
+            FoxMesModels.StickerSetsCatalog previous = stickerSets;
+            if (previous != null && previous.revision != null && value.revision != null && value.revision < previous.revision) {
+                value.installed = previous.installed;
+                value.revision = previous.revision;
+            }
+            stickerSetDocuments = documents;
+            stickerSets = value;
+        }
         FoxMesStickerFavorites favorites = stickerFavorites;
         if (favorites != null) favorites.catalogChanged();
     }
 
-    public LinkedHashMap<String, List<ReactionCatalogItem>> catalogCategories() {
-        LinkedHashMap<String, List<ReactionCatalogItem>> result = new LinkedHashMap<>();
-        ReactionCatalog current = catalog;
-        if (current == null) {
-            return result;
+    synchronized boolean receiveStickerSets(FoxMesModels.StickerSetsState state) {
+        FoxMesModels.StickerSetsCatalog current = stickerSets;
+        if (state == null || !state.valid() || current == null) {
+            return state != null && state.valid();
         }
-        ArrayList<ReactionCatalogItem> items = new ArrayList<>(current.availableReactions());
-        Collections.sort(items, (a, b) -> Integer.compare(a.order, b.order));
-        for (ReactionCatalogItem item : items) {
-            String category = TextUtils.isEmpty(item.category) ? "FoxMes" : item.category;
-            List<ReactionCatalogItem> list = result.get(category);
-            if (list == null) {
-                list = new ArrayList<>();
-                result.put(category, list);
+        if (current.revision != null && state.revision < current.revision) {
+            return false;
+        }
+        FoxMesModels.StickerSetsCatalog next = new FoxMesModels.StickerSetsCatalog();
+        next.sets = current.sets;
+        next.installed = state.installed;
+        next.revision = state.revision;
+        stickerSets = next;
+        return true;
+    }
+
+    void stickerSetsChanged() {
+        updates.dispatch(Collections.singletonList(new TL_update.TL_updateStickerSets()), new ArrayList<>(), null);
+        AndroidUtilities.runOnUIThread(() -> org.telegram.messenger.MediaDataController.getInstance(account)
+                .loadStickers(org.telegram.messenger.MediaDataController.TYPE_EMOJIPACKS, false, true));
+    }
+
+    void setStickerSetInstalled(int setId, boolean installed) throws IOException {
+        receiveStickerSets(api.setStickerSetInstalled(setId, installed));
+    }
+
+    void orderStickerSets(boolean emoji, List<Long> order) throws IOException {
+        ArrayList<Integer> ids = new ArrayList<>();
+        for (Long id : order) {
+            if (id != null && id > 0 && id <= Integer.MAX_VALUE) {
+                ids.add(id.intValue());
             }
-            list.add(item);
+        }
+        receiveStickerSets(api.orderStickerSets(emoji, ids));
+    }
+
+    public FoxMesModels.EmojiDocument emojiDocument(long id) {
+        if (id <= 0 || id > Integer.MAX_VALUE) {
+            return null;
+        }
+        FoxMesModels.EmojiDocument item = stickerSetDocuments.get((int) id);
+        return item != null ? item : foreignDocuments.get((int) id);
+    }
+
+    public Map<Integer, FoxMesModels.EmojiDocument> emojiDocuments(List<Integer> ids) throws IOException {
+        ensureStickerSets();
+        HashMap<Integer, FoxMesModels.EmojiDocument> result = new HashMap<>();
+        ArrayList<Integer> missing = new ArrayList<>();
+        for (Integer id : ids) {
+            FoxMesModels.EmojiDocument item = emojiDocument(id);
+            if (item != null) {
+                result.put(id, item);
+            } else if (!missing.contains(id)) {
+                missing.add(id);
+            }
+        }
+        for (int from = 0; from < missing.size(); from += 200) {
+            for (FoxMesModels.EmojiDocument item : api.emojiDocuments(missing.subList(from, Math.min(missing.size(), from + 200)))) {
+                foreignDocuments.put(item.id, item);
+                result.put(item.id, item);
+            }
         }
         return result;
     }
-
 
     private final ConcurrentHashMap<Long, long[]> outboxRead = new ConcurrentHashMap<>();
 

@@ -159,6 +159,28 @@ public final class FoxMesConfiguration {
         return "https://" + internalLinksDomain + "/@" + username;
     }
 
+    public static String stickerSetLink(String shortName, boolean emoji) {
+        return "https://" + internalLinksDomain + (emoji ? "/addemoji/" : "/addstickers/") + shortName;
+    }
+
+    public static Uri localizedInternalUri(Uri uri) {
+        String host = uri != null ? uri.getHost() : null;
+        String path = uri != null ? uri.getPath() : null;
+        if (host == null || path == null) {
+            return uri;
+        }
+        host = host.toLowerCase(Locale.US);
+        if (host.startsWith("www.")) {
+            host = host.substring(4);
+        }
+        String lower = path.toLowerCase(Locale.US);
+        if ((host.equals(internalLinksDomain) || host.equals("fxl.ru"))
+                && (lower.startsWith("/addemoji/") || lower.startsWith("/addstickers/"))) {
+            return uri.buildUpon().scheme("https").authority("t.me").build();
+        }
+        return uri;
+    }
+
     private static String webPath(String path) {
         return trimTrailingSlashes(webURL()) + "/" + path;
     }

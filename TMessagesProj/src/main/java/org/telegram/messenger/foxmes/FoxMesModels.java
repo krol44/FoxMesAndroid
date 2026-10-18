@@ -19,7 +19,7 @@ public final class FoxMesModels {
     }
 
     public static class StickerFavoritesState {
-        @SerializedName("emoji_ids") public List<Integer> emojiIds;
+        @SerializedName("sticker_ids") public List<Integer> emojiIds;
         public Long revision;
         public int limit;
         boolean valid() {
@@ -139,13 +139,89 @@ public final class FoxMesModels {
         public int emojiId;
     }
 
-    public static class ReactionCatalogItem {
+    public static class EmojiDocument {
         public int id;
         public String emoji;
-        @SerializedName("asset_url")
-        public String assetUrl;
-        public String category;
+        public String url;
+        public String mime;
+        public int width;
+        public int height;
+        public long size;
+        @SerializedName("set_id")
+        public int setId;
+        @SerializedName("text_color")
+        public boolean textColor;
+
+        boolean video() {
+            return "video/webm".equals(mime);
+        }
+    }
+
+    public static class ReactionCatalogItem extends EmojiDocument {
         public int order;
+    }
+
+    public static class EmojiDocuments {
+        public List<EmojiDocument> items;
+    }
+
+    public static class StickerSet {
+        public static final String KIND_EMOJI = "emoji";
+        public int id;
+        public String kind;
+        public String title;
+        @SerializedName("short_name")
+        public String shortName;
+        @SerializedName("status_allowed")
+        public boolean statusAllowed;
+        @SerializedName("default")
+        public boolean isDefault;
+        public List<EmojiDocument> items;
+
+        boolean emoji() {
+            return KIND_EMOJI.equals(kind);
+        }
+
+        public List<EmojiDocument> items() {
+            return list(items);
+        }
+    }
+
+    public static class InstalledStickerSets {
+        public List<Integer> emoji;
+        public List<Integer> sticker;
+
+        public List<Integer> of(boolean emojiKind) {
+            return list(emojiKind ? emoji : sticker);
+        }
+    }
+
+    public static class StickerSetsState {
+        public InstalledStickerSets installed;
+        public Long revision;
+
+        boolean valid() {
+            return installed != null && revision != null && revision >= 0;
+        }
+    }
+
+    public static class EmojiGroup {
+        public String title;
+        public EmojiDocument icon;
+        public List<String> emoticons;
+    }
+
+    public static class StickerSetsCatalog extends StickerSetsState {
+        public List<StickerSet> sets;
+        public List<EmojiGroup> groups;
+
+        public List<StickerSet> sets() {
+            return list(sets);
+        }
+
+        public List<EmojiGroup> groups() {
+            return list(groups);
+        }
     }
 
     public static class ReactionCatalog {
@@ -343,6 +419,7 @@ public final class FoxMesModels {
         @SerializedName("forwarded_from")
         public ForwardedFrom forwardedFrom;
         public Location location;
+        public EmojiDocument sticker;
         public CallInfo call;
         public FoxMesChatAppearance.Action action;
         public Ephemeral ephemeral;
@@ -544,6 +621,7 @@ public final class FoxMesModels {
         @SerializedName("reply_to_id")
         public Integer replyToId;
         public List<Attachment> attachments;
+        public EmojiDocument sticker;
         @SerializedName("deliver_at")
         public long deliverAt;
         @SerializedName("deliver_when_online")

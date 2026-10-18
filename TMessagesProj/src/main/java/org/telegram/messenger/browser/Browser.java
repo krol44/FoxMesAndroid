@@ -292,6 +292,7 @@ public class Browser {
         if (context == null || uri == null) {
             return;
         }
+        uri = org.telegram.messenger.foxmes.FoxMesConfiguration.localizedInternalUri(uri);
         final int currentAccount = UserConfig.selectedAccount;
         boolean[] forceBrowser = new boolean[]{false};
         boolean internalUri = isInternalUri(uri, forceBrowser);
@@ -678,6 +679,7 @@ public class Browser {
     }
 
     public static boolean isInternalUri(Uri uri, boolean all, boolean[] forceBrowser) {
+        uri = org.telegram.messenger.foxmes.FoxMesConfiguration.localizedInternalUri(uri);
         String host = AndroidUtilities.getHostAuthority(uri);
         host = host != null ? host.toLowerCase() : "";
 

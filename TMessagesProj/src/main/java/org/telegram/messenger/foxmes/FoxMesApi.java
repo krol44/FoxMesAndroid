@@ -276,6 +276,54 @@ public final class FoxMesApi {
         return http.request("GET", "/reactions", null, null, ReactionCatalog.class);
     }
 
+    public FoxMesModels.StickerSetsCatalog stickerSets() throws IOException {
+        return http.request("GET", "/sticker-sets", null, null, FoxMesModels.StickerSetsCatalog.class);
+    }
+
+    public FoxMesModels.StickerSetsState setStickerSetInstalled(int setId, boolean installed) throws IOException {
+        return stickerSetsMutation("/sticker-sets/" + setId + "/installed", FoxMesJson.body().put("installed", installed));
+    }
+
+    public FoxMesModels.StickerSetsState orderStickerSets(boolean emoji, List<Integer> setIds) throws IOException {
+        return stickerSetsMutation("/sticker-sets/order", FoxMesJson.body().put("kind", emoji ? "emoji" : "sticker").putNumbers("set_ids", setIds));
+    }
+
+    private FoxMesModels.StickerSetsState stickerSetsMutation(String path, FoxMesJson.Body body) throws IOException {
+        String operation = FoxMesJson.operationId();
+        body.put("operation_id", operation);
+        try {
+            return http.request("PUT", path, null, body, FoxMesModels.StickerSetsState.class);
+        } catch (IOException failure) {
+            if (!FoxMesHttpException.isTransient(failure)) {
+                throw failure;
+            }
+            JsonObject journal = http.request("GET", "/operations/" + operation, null, null, JsonObject.class);
+            String status = FoxMesJson.optString(journal, "status");
+            if ("done".equals(status)) {
+                return FoxMesJson.parse(journal.get("result"), FoxMesModels.StickerSetsState.class);
+            }
+            if ("unknown".equals(status)) {
+                return http.request("PUT", path, null, body, FoxMesModels.StickerSetsState.class);
+            }
+            throw failure;
+        }
+    }
+
+    public List<FoxMesModels.EmojiDocument> emojiDocuments(List<Integer> ids) throws IOException {
+        if (ids.isEmpty()) {
+            return new java.util.ArrayList<>();
+        }
+        StringBuilder query = new StringBuilder();
+        for (Integer id : ids) {
+            if (query.length() > 0) query.append(',');
+            query.append(id);
+        }
+        Map<String, String> params = new java.util.HashMap<>();
+        params.put("ids", query.toString());
+        FoxMesModels.EmojiDocuments result = http.request("GET", "/emoji-documents", params, null, FoxMesModels.EmojiDocuments.class);
+        return FoxMesModels.list(result != null ? result.items : null);
+    }
+
 
     public Draft draft(long chatId) throws IOException {
         return http.request("GET", "/chats/" + chatId + "/draft", null, null, Draft.class);

@@ -1329,12 +1329,7 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
         if (stickerSet == null) {
             return;
         }
-        String stickersUrl;
-        if (stickerSet.set != null && stickerSet.set.emojis) {
-            stickersUrl = "https://" + MessagesController.getInstance(currentAccount).linkPrefix + "/addemoji/" + stickerSet.set.short_name;
-        } else {
-            stickersUrl = "https://" + MessagesController.getInstance(currentAccount).linkPrefix + "/addstickers/" + stickerSet.set.short_name;
-        }
+        String stickersUrl = org.telegram.messenger.foxmes.FoxMesConfiguration.stickerSetLink(stickerSet.set.short_name, stickerSet.set != null && stickerSet.set.emojis);
         if (id == 1) {
             Context context = parentActivity;
             if (context == null && parentFragment != null) {

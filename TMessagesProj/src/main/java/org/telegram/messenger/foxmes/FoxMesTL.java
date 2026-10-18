@@ -58,8 +58,6 @@ public final class FoxMesTL {
 
         long peerForChat(long chatId);
 
-        boolean isCatalogReaction(int emojiId);
-
         void recordPhotoUrl(long photoId, String url);
 
         boolean isOnline(long userId);
@@ -528,7 +526,7 @@ public final class FoxMesTL {
         ArrayList<TLRPC.MessagePeerReaction> recent = new ArrayList<>();
         int now = (int) (System.currentTimeMillis() / 1000);
         for (Reaction reaction : source) {
-            if (reaction.emojiId == 0 || !context.isCatalogReaction(reaction.emojiId)) {
+            if (reaction.emojiId == 0) {
                 continue;
             }
             int[] count = counts.get(reaction.emojiId);
@@ -598,6 +596,12 @@ public final class FoxMesTL {
                 }
                 return normalizeMedia(media);
             }
+        }
+        if (source.sticker != null && !TextUtils.isEmpty(source.sticker.url)) {
+            TLRPC.TL_messageMediaDocument media = new TLRPC.TL_messageMediaDocument();
+            media.document = FoxMesStickerHandlers.document(source.sticker, true);
+            media.flags = TLObject.setFlag(media.flags, FLAG_0, true);
+            return normalizeMedia(media);
         }
         if (source.location != null) {
             TLRPC.TL_geoPoint geo = new TLRPC.TL_geoPoint();
@@ -939,6 +943,7 @@ public final class FoxMesTL {
         source.entities = reminder.entities;
         source.replyToId = reminder.replyToId;
         source.attachments = reminder.attachments;
+        source.sticker = reminder.sticker;
         source.groupedId = reminder.groupedId;
         source.silent = reminder.silent;
         int date = reminder.deliverWhenOnline ? SCHEDULE_WHEN_ONLINE : (int) Math.min(Integer.MAX_VALUE, reminder.deliverAt);

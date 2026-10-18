@@ -6,7 +6,7 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.MediaDataController;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.Utilities;
-import org.telegram.messenger.foxmes.FoxMesModels.ReactionCatalogItem;
+import org.telegram.messenger.foxmes.FoxMesModels.EmojiDocument;
 import org.telegram.messenger.foxmes.FoxMesModels.StickerFavoritesState;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
@@ -147,14 +147,14 @@ final class FoxMesStickerFavorites {
                 synchronized (this) { if (state == null) throw e; }
             }
         }
-        runtime.ensureCatalog();
+        runtime.ensureStickerSets();
         StickerFavoritesState snapshot;
         synchronized (this) { snapshot = state; }
         if (!active() || snapshot == null) { request.fail(401, "SESSION_REVOKED"); return; }
         Map<Integer, TLRPC.Document> documents = new HashMap<>();
         for (Integer id : snapshot.emojiIds) {
-            ReactionCatalogItem item = runtime.catalogItem(id);
-            if (item != null) documents.put(id, FoxMesStickerHandlers.catalogDocument(runtime, item, true));
+            EmojiDocument item = runtime.emojiDocument(id);
+            if (item != null) documents.put(id, FoxMesStickerHandlers.document(item, true));
         }
         request.replyLate(() -> {
             synchronized (this) {
@@ -164,9 +164,9 @@ final class FoxMesStickerFavorites {
                 boolean missing = false;
                 for (Integer id : state.emojiIds) {
                     TLRPC.Document document = documents.get(id);
-                    if (document == null) { missing |= runtime.catalogItem(id) != null; continue; }
+                    if (document == null) { missing |= runtime.emojiDocument(id) != null; continue; }
                     result.stickers.add(document);
-                    ReactionCatalogItem item = runtime.catalogItem(id);
+                    EmojiDocument item = runtime.emojiDocument(id);
                     String emoji = item != null && item.emoji != null ? item.emoji : "";
                     TLRPC.TL_stickerPack pack = packs.get(emoji);
                     if (pack == null) {

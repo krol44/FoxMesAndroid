@@ -154,8 +154,8 @@ public final class FoxMesPeerStatusHandlers {
     }
 
     static TLRPC.Document document(FoxMesRuntime runtime, long id) throws IOException {
-        runtime.ensureCatalog();
-        FoxMesModels.ReactionCatalogItem item = runtime.catalogItem(id);
-        return item == null ? null : FoxMesStickerHandlers.catalogDocument(runtime, item, false);
+        if (id <= 0 || id > Integer.MAX_VALUE) return null;
+        FoxMesModels.EmojiDocument item = runtime.emojiDocuments(Collections.singletonList((int) id)).get((int) id);
+        return item == null ? null : FoxMesStickerHandlers.document(item, false);
     }
 }

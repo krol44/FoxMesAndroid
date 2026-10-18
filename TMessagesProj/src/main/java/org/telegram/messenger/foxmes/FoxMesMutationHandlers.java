@@ -386,7 +386,7 @@ final class FoxMesMutationHandlers {
         for (TLRPC.Reaction reaction : req.reaction) {
             if (reaction instanceof TLRPC.TL_reactionCustomEmoji) {
                 long id = ((TLRPC.TL_reactionCustomEmoji) reaction).document_id;
-                if (runtime.catalogItem(id) == null) { r.fail(400, "REACTION_INVALID"); return; }
+                if (id <= 0 || id > Integer.MAX_VALUE) { r.fail(400, "REACTION_INVALID"); return; }
                 ids.add((int) id);
             } else if (reaction instanceof TLRPC.TL_reactionEmoji) {
                 ReactionCatalogItem item = runtime.catalogItemForEmoji(((TLRPC.TL_reactionEmoji) reaction).emoticon);

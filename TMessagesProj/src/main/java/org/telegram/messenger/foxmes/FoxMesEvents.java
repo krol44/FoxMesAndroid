@@ -156,6 +156,10 @@ public final class FoxMesEvents {
                 if (!runtime.stickerFavorites().receive(FoxMesJson.parse(data, FoxMesModels.StickerFavoritesState.class))) return false;
                 dispatch(runtime, Collections.singletonList(new TL_update.TL_updateFavedStickers()), new ArrayList<>(), seq);
                 return true;
+            case "sticker_sets.updated":
+                if (!runtime.receiveStickerSets(FoxMesJson.parse(data, FoxMesModels.StickerSetsState.class))) return false;
+                runtime.stickerSetsChanged();
+                return true;
             case "gifs.updated":
                 dispatch(runtime, Collections.singletonList(new TL_update.TL_updateSavedGifs()), new ArrayList<>(), seq);
                 return true;
