@@ -237,7 +237,8 @@ final class FoxMesStickerHandlers {
 
     static TLRPC.Document document(EmojiDocument item, boolean asSticker) {
         boolean webm = item.video();
-        String mime = webm ? "video/webm" : "image/webp";
+        boolean lottie = item.lottie();
+        String mime = webm ? "video/webm" : lottie ? "application/x-tgsticker" : "image/webp";
         int width = item.width > 0 ? item.width : (asSticker ? 512 : 100);
         int height = item.height > 0 ? item.height : (asSticker ? 512 : 100);
         String url = FoxMesHttp.absolute(item.url);
@@ -246,7 +247,7 @@ final class FoxMesStickerHandlers {
         ref.url = url;
         ref.mime = mime;
         TLRPC.TL_document document = new TLRPC.TL_document();
-        if (!webm) {
+        if (!webm && !lottie) {
             ref.posterUrl = url;
             TLRPC.TL_photoSize thumb = new TLRPC.TL_photoSize();
             thumb.type = "m";
@@ -263,7 +264,7 @@ final class FoxMesStickerHandlers {
         document.size = item.size;
         document.dc_id = FoxMesTL.DC;
         TLRPC.TL_documentAttributeFilename fileName = new TLRPC.TL_documentAttributeFilename();
-        fileName.file_name = (asSticker ? "sticker" : "emoji") + (webm ? ".webm" : ".webp");
+        fileName.file_name = (asSticker ? "sticker" : "emoji") + (webm ? ".webm" : lottie ? ".tgs" : ".webp");
         document.attributes.add(fileName);
         TLRPC.InputStickerSet set;
         if (item.setId > 0) {
