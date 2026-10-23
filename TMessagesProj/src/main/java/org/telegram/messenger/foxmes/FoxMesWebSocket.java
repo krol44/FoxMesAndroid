@@ -2,6 +2,9 @@ package org.telegram.messenger.foxmes;
 
 import org.telegram.messenger.foxmes.FoxMesModels.Event;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -34,6 +37,8 @@ public final class FoxMesWebSocket {
     private final ScheduledExecutorService scheduler;
 
     private WebSocket socket;
+    private FoxMesSealedCrypto.SocketCodec codec;
+    private int failuresSinceConnect;
     private ScheduledFuture<?> reconnect;
     private boolean running;
     private boolean connected;
@@ -127,7 +132,14 @@ public final class FoxMesWebSocket {
     }
 
     public synchronized boolean send(String text) {
-        return socket != null && connected && socket.send(text);
+        if (socket == null || !connected || codec == null) {
+            return false;
+        }
+        try {
+            return socket.send(ByteString.of(codec.seal(text.getBytes(StandardCharsets.UTF_8))));
+        } catch (java.security.GeneralSecurityException e) {
+            return false;
+        }
     }
 
     private HttpUrl socketUrl() {
@@ -150,12 +162,31 @@ public final class FoxMesWebSocket {
             return;
         }
         final int current = ++generation;
-        Request request = new Request.Builder()
-                .url(url)
-                .header("Authorization", "Bearer " + token)
-                .build();
-        background = !FoxMesAppState.isForeground();
-        socket = FoxMesHttp.webSocketClient(url, background).newWebSocket(request, new WebSocketListener() {
+        final boolean fresh = failuresSinceConnect >= 2;
+        scheduler.execute(() -> open(current, url, token, fresh));
+    }
+
+    private void open(int current, HttpUrl url, String token, boolean fresh) {
+        FoxMesSealed.SignedSocket signed;
+        try {
+            signed = FoxMesSealed.signSocket(new Request.Builder().url(url).build(), token, fresh);
+        } catch (IOException e) {
+            FoxMesLog.w("websocket cannot be sealed: " + e.getMessage());
+            lost(current);
+            return;
+        }
+        synchronized (this) {
+            if (!running || current != generation) {
+                return;
+            }
+            codec = signed.codec;
+            background = !FoxMesAppState.isForeground();
+            socket = FoxMesHttp.webSocketClient(url, background).newWebSocket(signed.request, listenerFor(current));
+        }
+    }
+
+    private WebSocketListener listenerFor(int current) {
+        return new WebSocketListener() {
             @Override
             public void onOpen(WebSocket webSocket, Response response) {
                 synchronized (FoxMesWebSocket.this) {
@@ -163,6 +194,7 @@ public final class FoxMesWebSocket {
                         return;
                     }
                     attempt = 0;
+                    failuresSinceConnect = 0;
                     connected = true;
                 }
                 listener.onConnected();
@@ -170,12 +202,28 @@ public final class FoxMesWebSocket {
 
             @Override
             public void onMessage(WebSocket webSocket, String text) {
-                handle(current, text);
+                webSocket.cancel();
+                lost(current);
             }
 
             @Override
             public void onMessage(WebSocket webSocket, ByteString bytes) {
-                handle(current, bytes.utf8());
+                FoxMesSealedCrypto.SocketCodec current0;
+                synchronized (FoxMesWebSocket.this) {
+                    current0 = codec;
+                }
+                byte[] plain;
+                try {
+                    plain = current0 != null ? current0.open(bytes.toByteArray()) : null;
+                } catch (java.security.GeneralSecurityException e) {
+                    plain = null;
+                }
+                if (plain == null) {
+                    webSocket.cancel();
+                    lost(current);
+                    return;
+                }
+                handle(current, new String(plain, StandardCharsets.UTF_8));
             }
 
             @Override
@@ -191,11 +239,11 @@ public final class FoxMesWebSocket {
             @Override
             public void onFailure(WebSocket webSocket, Throwable t, Response response) {
                 if (response != null && response.code() == 401) {
-                    FoxMesLog.w("websocket rejected the bearer");
+                    FoxMesLog.w("websocket handshake was rejected");
                 }
                 lost(current);
             }
-        });
+        };
     }
 
     private void lost(int current) {
@@ -206,6 +254,9 @@ public final class FoxMesWebSocket {
             }
             socket = null;
             notify = connected;
+            if (!connected) {
+                failuresSinceConnect++;
+            }
             connected = false;
             if (running) {
                 scheduleReconnect();

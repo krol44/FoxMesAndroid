@@ -38,7 +38,7 @@ public final class FoxMesTokenStore {
                         EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM);
             } catch (Exception e) {
                 FoxMesLog.e("encrypted token store unavailable", e);
-                result = context.getSharedPreferences(name + "_plain", Context.MODE_PRIVATE);
+                return null;
             }
             preferences = result;
             preferencesProfile = profile;
@@ -51,10 +51,11 @@ public final class FoxMesTokenStore {
     }
 
     public static String loadToken(long userId) {
-        if (userId == 0) {
+        SharedPreferences store = preferences();
+        if (userId == 0 || store == null) {
             return null;
         }
-        return preferences().getString(tokenKey(userId), null);
+        return store.getString(tokenKey(userId), null);
     }
 
     public static boolean hasToken(long userId) {
@@ -63,8 +64,12 @@ public final class FoxMesTokenStore {
 
     public static void save(String token, long userId) {
         synchronized (lock) {
+            SharedPreferences store = preferences();
+            if (store == null) {
+                throw new IllegalStateException("secure token storage is unavailable");
+            }
             List<Long> users = knownUserIds();
-            SharedPreferences.Editor editor = preferences().edit().putString(tokenKey(userId), token);
+            SharedPreferences.Editor editor = store.edit().putString(tokenKey(userId), token);
             if (!users.contains(userId)) {
                 users.add(userId);
                 editor.putString(KNOWN_USERS, TextUtils.join(",", users));
@@ -75,7 +80,8 @@ public final class FoxMesTokenStore {
 
     public static List<Long> knownUserIds() {
         ArrayList<Long> result = new ArrayList<>();
-        String raw = preferences().getString(KNOWN_USERS, null);
+        SharedPreferences store = preferences();
+        String raw = store != null ? store.getString(KNOWN_USERS, null) : null;
         if (TextUtils.isEmpty(raw)) {
             return result;
         }
@@ -93,9 +99,13 @@ public final class FoxMesTokenStore {
 
     public static void clear(long userId) {
         synchronized (lock) {
+            SharedPreferences store = preferences();
+            if (store == null) {
+                return;
+            }
             List<Long> users = knownUserIds();
             users.remove(userId);
-            SharedPreferences.Editor editor = preferences().edit().remove(tokenKey(userId));
+            SharedPreferences.Editor editor = store.edit().remove(tokenKey(userId));
             if (users.isEmpty()) {
                 editor.remove(KNOWN_USERS);
             } else {

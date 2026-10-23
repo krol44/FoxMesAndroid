@@ -110,7 +110,7 @@ public final class FoxMesConfiguration {
         return lower.equals("test") || lower.endsWith(".test");
     }
 
-    public static boolean allowsBearer(String url) {
+    public static boolean sealsRequests(String url) {
         if (url == null) {
             return false;
         }

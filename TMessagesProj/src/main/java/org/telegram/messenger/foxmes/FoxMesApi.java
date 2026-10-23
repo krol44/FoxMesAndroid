@@ -73,11 +73,16 @@ public final class FoxMesApi {
 
 
     public AuthStart startDevice(String deviceName) throws IOException {
-        return http.request("POST", "/auth/device/start", null, FoxMesJson.body().put("device_name", deviceName), false, AuthStart.class);
+        http.beginLogin();
+        return FoxMesJson.parse(http.loginRequest("/auth/device/start", FoxMesJson.body().put("device_name", deviceName)), AuthStart.class);
     }
 
     public AuthPoll pollDevice(String request) throws IOException {
-        return http.request("POST", "/auth/device/exchange", null, FoxMesJson.body().put("request", request), false, AuthPoll.class);
+        AuthPoll result = FoxMesJson.parse(http.loginRequest("/auth/device/exchange", FoxMesJson.body().put("request", request)), AuthPoll.class);
+        if (result != null && result.sealedToken() != null) {
+            http.endLogin();
+        }
+        return result;
     }
 
     public void logout(String token) throws IOException {

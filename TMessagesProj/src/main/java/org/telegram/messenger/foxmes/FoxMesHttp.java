@@ -60,6 +60,7 @@ public final class FoxMesHttp {
     private static final long SOCKET_BACKGROUND_PING_SECONDS = 25;
 
     private final TokenProvider tokenProvider;
+    private volatile FoxMesSealed.Credential loginCredential;
     private volatile Runnable onUnauthorized;
     private volatile Runnable onTransportFailure;
 
@@ -88,9 +89,59 @@ public final class FoxMesHttp {
                     .writeTimeout(60, TimeUnit.SECONDS)
                     .pingInterval(25, TimeUnit.SECONDS)
                     .dns(FoxMesHttp::lookup)
+                    .addInterceptor(new FoxMesSealed.RetryInterceptor())
+                    .addNetworkInterceptor(new FoxMesSealed.NetworkInterceptor())
                     .build();
         }
         return sharedClient;
+    }
+
+    static OkHttpClient plainClientFor(HttpUrl url) {
+        OkHttpClient.Builder builder = clientFor(url, false).newBuilder();
+        builder.interceptors().clear();
+        builder.networkInterceptors().clear();
+        return builder.build();
+    }
+
+    private static Request.Builder sealedBuilder(Request.Builder builder, String token) {
+        if (token != null && !token.isEmpty()) {
+            builder.tag(FoxMesSealed.Tag.class, FoxMesSealed.Tag.session(token));
+        }
+        return builder;
+    }
+
+    public void beginLogin() throws IOException {
+        HttpUrl url = url("/auth/login-key", null);
+        Request request = new Request.Builder().url(url).get().header("Accept", "application/json").build();
+        String text = execute(clientFor(url, false), request, null);
+        FoxMesSealed.LoginKey key = FoxMesSealed.verifyLoginDocument(text, url.host());
+        if (key == null) {
+            throw new FoxMesHttpException(0, "LOGIN_KEY_UNTRUSTED", "login key is not trusted", text);
+        }
+        try {
+            loginCredential = FoxMesSealed.startLogin(key);
+        } catch (java.security.GeneralSecurityException e) {
+            throw new IOException("cannot start login", e);
+        }
+    }
+
+    public void endLogin() {
+        loginCredential = null;
+    }
+
+    public String loginRequest(String path, FoxMesJson.Body body) throws IOException {
+        FoxMesSealed.Credential credential = loginCredential;
+        if (credential == null) {
+            throw new IOException("login is not started");
+        }
+        HttpUrl url = url(path, null);
+        Request request = new Request.Builder()
+                .url(url)
+                .post(RequestBody.create(body.toString(), JSON))
+                .header("Accept", "application/json")
+                .tag(FoxMesSealed.Tag.class, FoxMesSealed.Tag.login(credential))
+                .build();
+        return execute(clientFor(url, false), request, null);
     }
 
     private static List<InetAddress> lookup(String hostname) throws UnknownHostException {
@@ -249,9 +300,7 @@ public final class FoxMesHttp {
                 .url(url)
                 .method(method, requestBody)
                 .header("Accept", "application/json");
-        if (bearer != null && !bearer.isEmpty()) {
-            builder.header("Authorization", "Bearer " + bearer);
-        }
+        sealedBuilder(builder, bearer);
         return execute(clientFor(url, false), builder.build(), null);
     }
 
@@ -282,10 +331,7 @@ public final class FoxMesHttp {
         if (lane != null && lane[0] != null) {
             builder.header(LANE_HEADER, lane[0]);
         }
-        String token = token();
-        if (token != null && !token.isEmpty()) {
-            builder.header("Authorization", "Bearer " + token);
-        }
+        sealedBuilder(builder, token());
         OkHttpClient client = clientFor(url, false).newBuilder()
                 .callTimeout(timeoutSeconds, TimeUnit.SECONDS)
                 .writeTimeout(timeoutSeconds, TimeUnit.SECONDS)
@@ -316,7 +362,7 @@ public final class FoxMesHttp {
             ResponseBody responseBody = response.body();
             String text = responseBody != null ? responseBody.string() : "";
             int status = response.code();
-            if (status == 401 && sentCurrentBearer(request)) {
+            if (status == 401 && sentCurrentSession(request)) {
                 Runnable callback = onUnauthorized;
                 if (callback != null) {
                     callback.run();
@@ -329,10 +375,10 @@ public final class FoxMesHttp {
         }
     }
 
-    private boolean sentCurrentBearer(Request request) {
-        String sent = request.header("Authorization");
+    private boolean sentCurrentSession(Request request) {
+        FoxMesSealed.Tag tag = request.tag(FoxMesSealed.Tag.class);
         String token = token();
-        return sent != null && token != null && !token.isEmpty() && sent.equals("Bearer " + token);
+        return tag != null && tag.token() != null && token != null && !token.isEmpty() && tag.token().equals(token);
     }
 
     static FoxMesHttpException errorFor(int status, String text) {
@@ -364,11 +410,8 @@ public final class FoxMesHttp {
         } else if (offset > 0) {
             builder.header("Range", "bytes=" + offset + "-");
         }
-        if (FoxMesConfiguration.allowsBearer(url)) {
-            String token = token();
-            if (token != null && !token.isEmpty()) {
-                builder.header("Authorization", "Bearer " + token);
-            }
+        if (FoxMesConfiguration.sealsRequests(url)) {
+            sealedBuilder(builder, token());
         }
         return clientFor(parsed, true).newCall(builder.build()).execute();
     }
@@ -384,11 +427,8 @@ public final class FoxMesHttp {
         } else if (offset > 0) {
             builder.header("Range", "bytes=" + offset + "-");
         }
-        if (FoxMesConfiguration.allowsBearer(url)) {
-            String token = token();
-            if (token != null && !token.isEmpty()) {
-                builder.header("Authorization", "Bearer " + token);
-            }
+        if (FoxMesConfiguration.sealsRequests(url)) {
+            sealedBuilder(builder, token());
         }
         return clientFor(parsed, true).newCall(builder.build());
     }

@@ -155,10 +155,6 @@ public final class FoxMesModels {
         boolean video() {
             return "video/webm".equals(mime);
         }
-
-        boolean lottie() {
-            return "application/x-tgsticker".equals(mime);
-        }
     }
 
     public static class ReactionCatalogItem extends EmojiDocument {
@@ -588,7 +584,19 @@ public final class FoxMesModels {
         public String accessToken;
         @SerializedName("token_type")
         public String tokenType;
+        @SerializedName("session_id")
+        public Long sessionId;
+        @SerializedName("session_secret")
+        public String sessionSecret;
         public User user;
+
+        public String sealedToken() {
+            byte[] secret = FoxMesSealedCrypto.unb64(sessionSecret);
+            if (sessionId == null || sessionId <= 0 || secret == null || secret.length != FoxMesSealedCrypto.KEY_SIZE) {
+                return null;
+            }
+            return FoxMesSealed.Token.encode(sessionId, secret);
+        }
     }
 
     public static class DeleteResult {

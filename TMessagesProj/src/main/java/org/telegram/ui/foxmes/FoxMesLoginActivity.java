@@ -24,6 +24,7 @@ import org.telegram.messenger.Utilities;
 import org.telegram.messenger.foxmes.FoxMesAuthService;
 import org.telegram.messenger.foxmes.FoxMesConfiguration;
 import org.telegram.messenger.foxmes.FoxMesHttpException;
+import org.telegram.messenger.foxmes.FoxMesLog;
 import org.telegram.messenger.foxmes.FoxMesModels;
 import org.telegram.messenger.foxmes.FoxMesSession;
 import org.telegram.messenger.foxmes.FoxMesTokenStore;
@@ -55,6 +56,7 @@ public class FoxMesLoginActivity extends BaseFragment {
     private static final String DECLINED = "The login was declined in the browser. Here is a new code.";
     private static final String NO_CONNECTION = "No connection to FoxMes. Retrying…";
     private static final String ALREADY_ADDED = "This account is already added. Here is a new code.";
+    private static final String STORAGE_UNAVAILABLE = "This device cannot keep the sign-in secure. Sign-in is not saved.";
     private static final long MAX_START_DELAY_MS = 30000;
 
     private TextView aboutLabel;
@@ -400,8 +402,9 @@ public class FoxMesLoginActivity extends BaseFragment {
         }
         try {
             FoxMesModels.AuthPoll result = auth.poll(request);
-            if (result != null && result.accessToken != null && result.user != null) {
-                FoxMesModels.Me me = auth.me(result.accessToken);
+            String sealedToken = result != null ? result.sealedToken() : null;
+            if (sealedToken != null && result.user != null) {
+                FoxMesModels.Me me = auth.me(sealedToken);
                 AndroidUtilities.runOnUIThread(() -> {
                     if (stale(generation)) {
                         return;
@@ -410,7 +413,7 @@ public class FoxMesLoginActivity extends BaseFragment {
                         startLogin(ALREADY_ADDED);
                         return;
                     }
-                    completeAuthorization(me, result.accessToken);
+                    completeAuthorization(me, sealedToken);
                 });
                 return;
             }
@@ -462,8 +465,14 @@ public class FoxMesLoginActivity extends BaseFragment {
             return;
         }
         ++requestGeneration;
+        try {
+            FoxMesSession.activate(currentAccount, user, token);
+        } catch (IllegalStateException e) {
+            FoxMesLog.e("sign-in storage", e);
+            setStatus(STORAGE_UNAVAILABLE);
+            return;
+        }
         showCode(null, null, "Done. Loading FoxMes…");
-        FoxMesSession.activate(currentAccount, user, token);
         openChats();
     }
 

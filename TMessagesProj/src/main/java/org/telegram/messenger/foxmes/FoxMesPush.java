@@ -33,6 +33,7 @@ import javax.crypto.spec.SecretKeySpec;
 public final class FoxMesPush {
 
     private static final byte VERSION = 1;
+    private static final byte SEALED_VERSION = 2;
     private static final int NONCE_LENGTH = 12;
     private static final int TAG_LENGTH = 16;
     private static final byte[] KEY_INFO = "fxl-push-v1".getBytes(StandardCharsets.UTF_8);
@@ -68,7 +69,11 @@ public final class FoxMesPush {
             if (token == null || token.isEmpty()) {
                 continue;
             }
-            JSONObject payload = open(key(token), envelope);
+            byte[] key = envelope[0] == SEALED_VERSION ? FoxMesSealed.pushKeyV2(token) : key(token);
+            if (key == null) {
+                continue;
+            }
+            JSONObject payload = open(key, envelope);
             if (payload == null) {
                 continue;
             }
@@ -149,7 +154,7 @@ public final class FoxMesPush {
         }
         try {
             byte[] envelope = Base64.decode(data, Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING);
-            if (envelope.length < 1 + NONCE_LENGTH + TAG_LENGTH || envelope[0] != VERSION) {
+            if (envelope.length < 1 + NONCE_LENGTH + TAG_LENGTH || (envelope[0] != VERSION && envelope[0] != SEALED_VERSION)) {
                 return null;
             }
             return envelope;
