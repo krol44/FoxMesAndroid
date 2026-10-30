@@ -1,3 +1,7 @@
+1.4.1 (30.10.26)
+
+- Fix bugs
+
 1.4.0 (23.10.26)
 
 - Hybrid Encryption with PFS

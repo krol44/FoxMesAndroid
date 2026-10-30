@@ -155,6 +155,10 @@ public final class FoxMesModels {
         boolean video() {
             return "video/webm".equals(mime);
         }
+
+        boolean lottie() {
+            return "application/x-tgsticker".equals(mime);
+        }
     }
 
     public static class ReactionCatalogItem extends EmojiDocument {
