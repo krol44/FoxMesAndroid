@@ -1,6 +1,8 @@
 package org.telegram.messenger.foxmes;
 
+import android.content.SharedPreferences;
 import org.telegram.messenger.ApplicationLoader;
+import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.foxmes.FoxMesModels.Chat;
 import org.telegram.messenger.foxmes.FoxMesModels.NotificationDefaults;
 import org.telegram.tgnet.TLObject;
@@ -17,6 +19,41 @@ import static org.telegram.messenger.foxmes.FoxMesHandlers.now;
 final class FoxMesConfigHandlers {
 
     private FoxMesConfigHandlers() {
+    }
+
+    private static TL_account.TL_reactionsNotifySettings reactionSettings(int account) {
+        SharedPreferences prefs = MessagesController.getNotificationsSettings(account);
+        TL_account.TL_reactionsNotifySettings settings = new TL_account.TL_reactionsNotifySettings();
+        if (prefs.getBoolean("EnableReactionsMessages", true)) {
+            settings.flags |= 1;
+            settings.messages_notify_from = prefs.getBoolean("EnableReactionsMessagesContacts", false)
+                    ? new TL_account.TL_reactionNotificationsFromContacts()
+                    : new TL_account.TL_reactionNotificationsFromAll();
+        }
+        if (prefs.getBoolean("EnableReactionsStories", true)) {
+            settings.flags |= 2;
+            settings.stories_notify_from = prefs.getBoolean("EnableReactionsStoriesContacts", false)
+                    ? new TL_account.TL_reactionNotificationsFromContacts()
+                    : new TL_account.TL_reactionNotificationsFromAll();
+        }
+        settings.show_previews = prefs.getBoolean("EnableReactionsPreview", true);
+        long document = prefs.getLong("ReactionSoundDocId", 0);
+        String path = prefs.getString("ReactionSoundPath", "NoSound");
+        if (document != 0) {
+            TLRPC.TL_notificationSoundRingtone sound = new TLRPC.TL_notificationSoundRingtone();
+            sound.id = document;
+            settings.sound = sound;
+        } else if ("NoSound".equalsIgnoreCase(path)) {
+            settings.sound = new TLRPC.TL_notificationSoundNone();
+        } else if (path != null) {
+            TLRPC.TL_notificationSoundLocal sound = new TLRPC.TL_notificationSoundLocal();
+            sound.title = prefs.getString("ReactionSound", null);
+            sound.data = path;
+            settings.sound = sound;
+        } else {
+            settings.sound = new TLRPC.TL_notificationSoundDefault();
+        }
+        return settings;
     }
 
     static void register(FoxMesTransport transport, FoxMesRuntime runtime) {
@@ -38,10 +75,11 @@ final class FoxMesConfigHandlers {
             r.reply(settings);
         });
         transport.on(TL_account.getReactionsNotifySettings.class, FoxMesTransport.Lane.INLINE, r -> {
-            TL_account.TL_reactionsNotifySettings settings = new TL_account.TL_reactionsNotifySettings();
-            settings.sound = new TLRPC.TL_notificationSoundDefault();
-            settings.show_previews = true;
-            r.reply(settings);
+            r.reply(reactionSettings(runtime.account));
+        });
+        transport.on(TL_account.setReactionsNotifySettings.class, FoxMesTransport.Lane.INLINE, r -> {
+            TL_account.setReactionsNotifySettings req = (TL_account.setReactionsNotifySettings) r.request;
+            r.reply(req.settings);
         });
         transport.on(TL_account.updateStatus.class, FoxMesTransport.Lane.INLINE, r -> r.reply(boolTrue()));
         transport.on(TL_account.registerDevice.class, FoxMesTransport.Lane.IO, r -> {

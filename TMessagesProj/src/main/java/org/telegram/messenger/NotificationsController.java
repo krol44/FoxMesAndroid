@@ -71,6 +71,8 @@ import org.telegram.messenger.utils.tlutils.TLKeyboardHelper;
 import org.telegram.messenger.utils.tlutils.TlUtils;
 import org.telegram.messenger.voip.VoIPGroupNotification;
 import org.telegram.tgnet.ConnectionsManager;
+import org.telegram.messenger.foxmes.FoxMesCallNotifications;
+import org.telegram.messenger.foxmes.FoxMesFeatureGate;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_account;
 import org.telegram.tgnet.tl.TL_keyboard;
@@ -1019,7 +1021,9 @@ public class NotificationsController extends BaseController implements Notificat
         });
     }
 
-    public void processNewMessages(ArrayList<MessageObject> messageObjects, boolean isLast, boolean isFcm, CountDownLatch countDownLatch) {
+    public void processNewMessages(ArrayList<MessageObject> incomingMessages, boolean isLast, boolean isFcm, CountDownLatch countDownLatch) {
+        final ArrayList<MessageObject> messageObjects = FoxMesFeatureGate.enabled
+                ? FoxMesCallNotifications.filterMessages(incomingMessages) : incomingMessages;
         if (BuildVars.LOGS_ENABLED) {
             FileLog.d("NotificationsController: processNewMessages msgs.size()=" + (messageObjects == null ? "null" : messageObjects.size()) + " isLast=" + isLast + " isFcm=" + isFcm + ")");
         }
@@ -1508,7 +1512,11 @@ public class NotificationsController extends BaseController implements Notificat
         });
     }
 
-    public void processLoadedUnreadMessages(LongSparseArray<Integer> dialogs, ArrayList<TLRPC.Message> messages, ArrayList<MessageObject> push, ArrayList<TLRPC.User> users, ArrayList<TLRPC.Chat> chats, ArrayList<TLRPC.EncryptedChat> encryptedChats, Collection<StoryNotification> storyPushes) {
+    public void processLoadedUnreadMessages(LongSparseArray<Integer> dialogs, ArrayList<TLRPC.Message> unreadMessages, ArrayList<MessageObject> unreadPush, ArrayList<TLRPC.User> users, ArrayList<TLRPC.Chat> chats, ArrayList<TLRPC.EncryptedChat> encryptedChats, Collection<StoryNotification> storyPushes) {
+        final ArrayList<TLRPC.Message> messages = FoxMesFeatureGate.enabled
+                ? FoxMesCallNotifications.filterUnread(unreadMessages) : unreadMessages;
+        final ArrayList<MessageObject> push = FoxMesFeatureGate.enabled
+                ? FoxMesCallNotifications.filterMessages(unreadPush) : unreadPush;
         getMessagesController().putUsers(users, true);
         getMessagesController().putChats(chats, true);
         getMessagesController().putEncryptedChats(encryptedChats, true);

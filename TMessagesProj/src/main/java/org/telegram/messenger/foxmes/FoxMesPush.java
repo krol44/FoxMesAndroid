@@ -98,6 +98,51 @@ public final class FoxMesPush {
         FoxMesLog.w("push: no signed-in account opens it");
     }
 
+    static void processReactionEvent(FoxMesRuntime runtime, com.google.gson.JsonObject data) throws java.io.IOException {
+        com.google.gson.JsonObject notice = FoxMesJson.object(data, "reaction_notification");
+        if (notice == null) return;
+        long recipient = FoxMesJson.getLong(notice, "recipient_id", 0);
+        long actor = FoxMesJson.getLong(notice, "actor_id", 0);
+        long date = FoxMesJson.getLong(notice, "date", 0);
+        long now = System.currentTimeMillis() / 1000;
+        if (recipient != runtime.selfId() || actor == 0 || actor == recipient || date < now - (48 * 60 * 60) || date > now + 300) return;
+        try {
+            JSONObject payload = new JSONObject();
+            payload.put("actorId", Long.toString(actor));
+            payload.put("messageId", data.get("id").getAsString());
+            payload.put("text", FoxMesJson.optString(data, "text"));
+            com.google.gson.JsonArray added = notice.getAsJsonArray("emoji_ids");
+            if (added == null || added.size() == 0) {
+                boolean remains = false;
+                if (data.has("reactions")) {
+                    for (com.google.gson.JsonElement entry : data.getAsJsonArray("reactions")) {
+                        if (FoxMesJson.getLong(entry.getAsJsonObject(), "user_id", 0) == actor) remains = true;
+                    }
+                }
+                if (!remains) removeReaction(runtime.account, payload);
+                return;
+            }
+            int emojiId = added.get(0).getAsInt();
+            FoxMesModels.ReactionCatalog catalog = runtime.ensureCatalog();
+            long revision = FoxMesJson.getLong(data, "reaction_revision", 0);
+            android.content.SharedPreferences prefs = MessagesController.getNotificationsSettings(runtime.account);
+            String key = "foxmes_reaction_notice_" + FoxMesConfiguration.profileKey() + "_" + recipient + "_" + data.get("id").getAsString();
+            synchronized (FoxMesPush.class) {
+                if (revision <= prefs.getLong(key, -1)) return;
+                prefs.edit().putLong(key, revision).apply();
+            }
+            for (FoxMesModels.ReactionCatalogItem item : catalog.availableReactions()) {
+                if (item.id == emojiId) {
+                    payload.put("emoji", item.emoji);
+                    showReaction(runtime.account, payload);
+                    return;
+                }
+            }
+        } catch (org.json.JSONException e) {
+            FoxMesLog.e("reaction event", e);
+        }
+    }
+
     private static void showReaction(int account, JSONObject payload) {
         long actorId = Utilities.parseLong(payload.optString("actorId"));
         int messageId = Utilities.parseInt(payload.optString("messageId"));
@@ -146,6 +191,10 @@ public final class FoxMesPush {
         ids.add(messageId);
         reactions.put(0, ids);
         NotificationsController.getInstance(account).removeDeletedMessagesFromNotifications(reactions, true);
+        android.util.SparseBooleanArray unread = new android.util.SparseBooleanArray();
+        unread.put(messageId, false);
+        MessagesController.getInstance(account).checkUnreadReactions(
+                Utilities.parseLong(payload.optString("actorId")), 0, unread);
     }
 
     private static byte[] decode(String data) {

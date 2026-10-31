@@ -398,6 +398,9 @@ public final class FoxMesEvents {
             ids.add(reaction.userId);
         }
         dispatch(runtime, Collections.singletonList(update), runtime.tlUsers(ids), seq);
+        if (!org.telegram.messenger.ApplicationLoader.getPushProvider().hasServices()) {
+            FoxMesPush.processReactionEvent(runtime, data);
+        }
         return true;
     }
 
