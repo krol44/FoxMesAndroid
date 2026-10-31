@@ -345,6 +345,11 @@ final class FoxMesCalls {
         ids.add(FoxMesJson.getLong(dto, "participant_id", 0));
         ids.removeAll(Collections.singletonList(0L));
         ArrayList<TLRPC.User> users = runtime.tlUsers(ids);
+        if (update.phone_call instanceof TL_phone.phoneCallRequested
+                && !runtime.callRequests.firstRequest(update.phone_call.id)) {
+            FoxMesLog.d("call " + update.phone_call.id + ": duplicate incoming request ignored");
+            return;
+        }
         runtime.updates.dispatch(FoxMesHandlers.single(update), users, null);
         if (update.phone_call instanceof TL_phone.phoneCallRequested) {
             scheduleRingTimeout(runtime, update.phone_call);

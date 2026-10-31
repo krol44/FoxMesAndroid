@@ -67,6 +67,7 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
     public final FoxMesHttp http;
     public final FoxMesApi api;
     public final FoxMesUpdateEngine updates;
+    final FoxMesCallDeduplicator callRequests = new FoxMesCallDeduplicator();
     public final FoxMesWebSocket socket;
     public final ExecutorService serial;
     public final ExecutorService io;
@@ -328,7 +329,10 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
             tick = null;
         }
         socket.stop();
-        serial.execute(() -> FoxMesEvents.getInstance(account).reset());
+        serial.execute(() -> {
+            callRequests.reset();
+            FoxMesEvents.getInstance(account).reset();
+        });
         snapshot = null;
         me = null;
         statusesSupported = false;
