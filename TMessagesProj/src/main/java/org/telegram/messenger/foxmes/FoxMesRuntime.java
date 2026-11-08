@@ -99,7 +99,21 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
     private volatile long lastTransportRestartAt;
     private volatile long lastRealtimeAt;
     private volatile long openedChatId;
-    private final ConcurrentHashMap<Long, long[]> presence = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Long, PresenceState> presence = new ConcurrentHashMap<>();
+
+    private static final class PresenceState {
+        final long chatId;
+        final long revision;
+        final boolean online;
+        final int lastSeenAt;
+
+        PresenceState(long chatId, long revision, boolean online, int lastSeenAt) {
+            this.chatId = chatId;
+            this.revision = revision;
+            this.online = online;
+            this.lastSeenAt = lastSeenAt;
+        }
+    }
     private int presenceTicks;
 
     public static final class Snapshot {
@@ -469,23 +483,33 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
 
     @Override
     public boolean isOnline(long userId) {
-        long[] state = presence.get(userId);
-        return state != null && state[2] != 0;
+        PresenceState state = presence.get(userId);
+        return state != null && state.online;
     }
 
 
-    public boolean applyPresence(long userId, long chatId, boolean online, long revision) {
+    @Override
+    public int lastSeenAt(long userId) {
+        PresenceState state = presence.get(userId);
+        return state != null ? state.lastSeenAt : 0;
+    }
+
+    public boolean isTypingStatusExpired(long userId) {
+        return chatForPeer(userId) == 0;
+    }
+
+    public boolean applyPresence(long userId, long chatId, boolean online, long revision, long lastSeenAtMs) {
         if (userId == 0 || userId == selfId() || peerForChat(chatId) != userId) {
             return false;
         }
         synchronized (presence) {
-            long[] state = presence.get(userId);
-            if (state != null && state[0] == chatId && revision > 0 && state[1] > revision) {
+            PresenceState state = presence.get(userId);
+            if (state != null && state.chatId == chatId && revision > 0 && state.revision > revision) {
                 return false;
             }
-            boolean was = state != null && state[2] != 0;
-            presence.put(userId, new long[]{chatId, revision, online ? 1 : 0});
-            return was != online;
+            int lastSeenAt = (int) Math.min(Integer.MAX_VALUE, Math.max(0, lastSeenAtMs / 1000));
+            presence.put(userId, new PresenceState(chatId, revision, online, lastSeenAt));
+            return state == null || state.online != online || state.lastSeenAt != lastSeenAt;
         }
     }
 
@@ -495,8 +519,8 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
         }
         presenceTicks = 0;
         ArrayList<Long> online = new ArrayList<>();
-        for (Map.Entry<Long, long[]> entry : presence.entrySet()) {
-            if (entry.getValue()[2] != 0) {
+        for (Map.Entry<Long, PresenceState> entry : presence.entrySet()) {
+            if (entry.getValue().online) {
                 online.add(entry.getKey());
             }
         }
@@ -506,12 +530,13 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
     private void clearPresence() {
         ArrayList<Long> online = new ArrayList<>();
         synchronized (presence) {
-            for (Map.Entry<Long, long[]> entry : presence.entrySet()) {
-                if (entry.getValue()[2] != 0) {
+            for (Map.Entry<Long, PresenceState> entry : presence.entrySet()) {
+                PresenceState state = entry.getValue();
+                if (state.online) {
                     online.add(entry.getKey());
+                    entry.setValue(new PresenceState(state.chatId, state.revision, false, state.lastSeenAt));
                 }
             }
-            presence.clear();
         }
         dispatchStatuses(online);
     }
@@ -524,7 +549,7 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
         for (Long userId : userIds) {
             TL_update.TL_updateUserStatus update = new TL_update.TL_updateUserStatus();
             update.user_id = userId;
-            update.status = FoxMesTL.status(isOnline(userId));
+            update.status = FoxMesTL.status(isOnline(userId), lastSeenAt(userId));
             list.add(update);
         }
         updates.dispatch(list, new ArrayList<>(), null);

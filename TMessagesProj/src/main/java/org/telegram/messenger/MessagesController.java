@@ -11384,6 +11384,13 @@ public class MessagesController extends BaseController implements NotificationCe
         }
     }
 
+    private boolean isTypingStatusExpired(TLRPC.User user, int time) {
+        if (org.telegram.messenger.foxmes.FoxMesFeatureGate.enabled) {
+            return org.telegram.messenger.foxmes.FoxMesRuntime.getInstance(currentAccount).isTypingStatusExpired(user.id);
+        }
+        return user.status.expires <= time - 30;
+    }
+
     public boolean sendTyping(long dialogId, long threadMsgId, int action, int classGuid) {
         return sendTyping(dialogId, threadMsgId, action, null, classGuid);
     }
@@ -11408,7 +11415,7 @@ public class MessagesController extends BaseController implements NotificationCe
                 }
                 if (user.status != null && user.status.expires != -100 && !onlinePrivacy.containsKey(user.id)) {
                     int time = getConnectionsManager().getCurrentTime();
-                    if (user.status.expires <= time - 30) {
+                    if (isTypingStatusExpired(user, time)) {
                         return false;
                     }
                 }

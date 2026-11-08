@@ -753,7 +753,8 @@ public final class FoxMesEvents {
         long chatId = FoxMesJson.getLong(data, "chat_id", 0);
         boolean online = Boolean.TRUE.equals(FoxMesJson.optBoolean(data, "online"));
         long revision = FoxMesJson.getLong(data, "revision", 0);
-        if (runtime.applyPresence(user, chatId, online, revision)) {
+        long lastSeenAtMs = FoxMesJson.getLong(data, "last_seen_at_ms", 0);
+        if (runtime.applyPresence(user, chatId, online, revision, lastSeenAtMs)) {
             runtime.dispatchStatuses(Collections.singletonList(user));
         }
     }

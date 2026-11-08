@@ -61,6 +61,10 @@ public final class FoxMesTL {
         void recordPhotoUrl(long photoId, String url);
 
         boolean isOnline(long userId);
+
+        default int lastSeenAt(long userId) {
+            return 0;
+        }
     }
 
 
@@ -184,24 +188,28 @@ public final class FoxMesTL {
             user.flags2 |= 256 | 512;
         }
         boolean online = !self && context.isOnline(source.id);
-        user.status = status(online);
+        int lastSeenAt = context.lastSeenAt(source.id);
+        user.status = status(online, lastSeenAt);
         user.flags = TLObject.setFlag(user.flags, FLAG_6, true);
         TLRPC.User result = normalizeUser(user);
-        result.status = status(online);
+        result.status = status(online, lastSeenAt);
         return result;
     }
 
     public static final int ONLINE_WINDOW = 120;
 
-    public static TLRPC.UserStatus status(boolean online) {
+    public static TLRPC.UserStatus status(boolean online, int lastSeenAt) {
         if (online) {
             TLRPC.TL_userStatusOnline status = new TLRPC.TL_userStatusOnline();
             status.expires = (int) (System.currentTimeMillis() / 1000) + ONLINE_WINDOW;
             return status;
         }
-        TLRPC.TL_userStatusRecently status = new TLRPC.TL_userStatusRecently();
-        status.expires = -100;
-        return status;
+        if (lastSeenAt > 0) {
+            TLRPC.TL_userStatusOffline status = new TLRPC.TL_userStatusOffline();
+            status.expires = lastSeenAt;
+            return status;
+        }
+        return new TLRPC.TL_userStatusEmpty();
     }
 
     public static long avatarPhotoId(User source) {
