@@ -240,7 +240,7 @@ public final class FoxMesFolders {
             FoxMesFolders bridge=of(runtime);
             State state;
             if (bridge.restoreConfirmed && bridge.state != null) { state=bridge.state; bridge.restoreConfirmed=false; }
-            else { state=bridge.load(); runtime.snapshot(false); }
+            else { state=bridge.load(); runtime.ensureChatsLoaded(); }
             configure(runtime);
             TLRPC.TL_messages_dialogFilters result=new TLRPC.TL_messages_dialogFilters();result.tags_enabled=state.tagsEnabled;
             for (int id:state.order) {if(id==0) result.filters.add(new TLRPC.TL_dialogFilterDefault());else result.filters.add(bridge.nativeFolder(bridge.find(id)));}r.reply(result);
@@ -254,7 +254,7 @@ public final class FoxMesFolders {
             FoxMesFolders bridge=of(runtime);TLRPC.TL_messages_updateDialogFilter req=(TLRPC.TL_messages_updateDialogFilter)r.request;
             Long revision=bridge.revisionFor(req);
             try {
-                if(!bridge.pending.containsKey(r)) {bridge.load();runtime.snapshot(false);}
+                if(!bridge.pending.containsKey(r)) {bridge.load();runtime.ensureChatsLoaded();}
                 if (revision != null && revision < 0) throw new FoxMesHttpException(400,"FOLDER_LOAD_FAILED","Reload folders before editing","");
                 FoxMesJson.Body body=FoxMesJson.body();boolean remove=(req.flags & TLObject.FLAG_0)==0 || req.filter==null;
                 if(!remove) body.put("folder",FoxMesJson.gson.toJsonTree(bridge.fromNative((TLRPC.TL_dialogFilter) req.filter)));

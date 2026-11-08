@@ -91,6 +91,7 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
     private volatile Map<Integer, FoxMesModels.EmojiDocument> stickerSetDocuments = Collections.emptyMap();
     private final ConcurrentHashMap<Integer, FoxMesModels.EmojiDocument> foreignDocuments = new ConcurrentHashMap<>();
     private volatile Snapshot snapshot;
+    private boolean chatsLoaded;
     private volatile boolean started;
     private volatile FoxMesStickerFavorites stickerFavorites;
     private volatile long sessionUserId;
@@ -334,6 +335,7 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
             FoxMesEvents.getInstance(account).reset();
         });
         snapshot = null;
+        chatsLoaded = false;
         me = null;
         statusesSupported = false;
         chats.clear();
@@ -424,7 +426,10 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
         lastGapResume = resume;
         stickerFavorites().refresh(true);
         store().putLong("event_seq", Math.max(0, resume - 1));
-        snapshot = null;
+        synchronized (this) {
+            snapshot = null;
+            chatsLoaded = false;
+        }
         Utilities.stageQueue.postRunnable(() -> {
             TLRPC.TL_updatesTooLong tooLong = new TLRPC.TL_updatesTooLong();
             AccountInstance.getInstance(account).getMessagesController().processUpdates(tooLong, false);
@@ -584,10 +589,17 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
             current = new Snapshot(self, supported);
             boolean refreshFolders = force || snapshot == null;
             snapshot = current;
+            chatsLoaded = true;
             if (refreshFolders) FoxMesFolders.refreshNative(this);
             return current;
         } finally {
             setUpdating(false);
+        }
+    }
+
+    synchronized void ensureChatsLoaded() throws IOException {
+        if (!chatsLoaded) {
+            snapshot(false);
         }
     }
 
