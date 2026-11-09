@@ -216,6 +216,10 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
         return started;
     }
 
+    long sessionGeneration() {
+        return sessionGeneration;
+    }
+
     public void onStartup() {
         UserConfig config = UserConfig.getInstance(account);
         if (!config.isClientActivated()) {
@@ -620,6 +624,7 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
     public synchronized Snapshot snapshot(boolean force) throws IOException {
         Snapshot current = snapshot;
         if (!force && current != null && System.currentTimeMillis() - current.fetchedAt < 5000) {
+            FoxMesArchive.apply(this, current.chats, Collections.emptyList(), new ArrayList<>(), null);
             return current;
         }
         setUpdating(true);
@@ -659,6 +664,7 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
             boolean refreshFolders = force || snapshot == null;
             snapshot = current;
             chatsLoaded = true;
+            FoxMesArchive.apply(this, supported, Collections.emptyList(), new ArrayList<>(), null);
             if (refreshFolders) FoxMesFolders.refreshNative(this);
             return current;
         } finally {

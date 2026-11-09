@@ -66,6 +66,6 @@ final class FoxMesGapRecovery {
             update.messages.addAll(deleted.subList(offset, Math.min(deleted.size(), offset + 100)));
             updates.add(update);
         }
-        runtime.updates.dispatch(updates, new ArrayList<>(), () -> afterApplied.applied(deleted));
+        FoxMesArchive.apply(runtime, snapshot.chats, updates, new ArrayList<>(), () -> afterApplied.applied(deleted));
     }
 }

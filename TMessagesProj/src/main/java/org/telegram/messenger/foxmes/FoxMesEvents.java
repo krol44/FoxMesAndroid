@@ -303,7 +303,9 @@ public final class FoxMesEvents {
             edit.message = tl;
             update = edit;
         }
-        dispatch(runtime, Collections.singletonList(update), users, seq);
+        Chat chat = runtime.chat(message.chatId);
+        FoxMesArchive.apply(runtime, chat != null ? Collections.singletonList(chat) : Collections.emptyList(),
+                Collections.singletonList(update), users, acknowledgement(runtime, seq));
         if (created && message.senderId != runtime.selfId()) {
             final long chatId = message.chatId;
             final int id = message.id;
@@ -647,10 +649,8 @@ public final class FoxMesEvents {
             FoxMesChatRequests.syncNotification(runtime, peer, false);
         }
         ArrayList<TLRPC.Update> updates = diff(previous, chat, peer);
-        if (updates.isEmpty()) {
-            return false;
-        }
-        dispatch(runtime, updates, runtime.tlUsers(Collections.singletonList(peer)), seq);
+        FoxMesArchive.apply(runtime, Collections.singletonList(chat), updates,
+                runtime.tlUsers(Collections.singletonList(peer)), acknowledgement(runtime, seq));
         return true;
     }
 
@@ -699,7 +699,7 @@ public final class FoxMesEvents {
             }
             updates.add(order);
         }
-        dispatch(runtime, updates, runtime.tlUsers(peers), seq);
+        FoxMesArchive.apply(runtime, snapshot.chats, updates, runtime.tlUsers(peers), acknowledgement(runtime, seq));
         return true;
     }
 
@@ -724,14 +724,6 @@ public final class FoxMesEvents {
             notify.peer = notifyPeer;
             notify.notify_settings = FoxMesTL.notifySettings(chat.notificationSettings);
             updates.add(notify);
-        }
-        if (previous == null || previous.archived != chat.archived) {
-            TL_update.TL_updateFolderPeers folders = new TL_update.TL_updateFolderPeers();
-            TLRPC.TL_folderPeer folderPeer = new TLRPC.TL_folderPeer();
-            folderPeer.peer = FoxMesTL.peer(peer);
-            folderPeer.folder_id = chat.archived ? 1 : 0;
-            folders.folder_peers.add(folderPeer);
-            updates.add(folders);
         }
         if (previous != null && previous.pinned != chat.pinned) {
             TL_update.TL_updateDialogPinned pinned = new TL_update.TL_updateDialogPinned();
