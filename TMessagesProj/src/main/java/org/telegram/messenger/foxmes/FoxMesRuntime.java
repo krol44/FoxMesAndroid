@@ -93,6 +93,7 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
     private volatile Snapshot snapshot;
     private boolean chatsLoaded;
     private volatile boolean started;
+    private volatile long sessionGeneration;
     private volatile FoxMesStickerFavorites stickerFavorites;
     private volatile long sessionUserId;
     private volatile boolean realtimePaused;
@@ -155,12 +156,22 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
             @Override
             public void onEvent(Event event) {
                 lastRealtimeAt = SystemClock.elapsedRealtime();
-                serial.execute(() -> FoxMesEvents.getInstance(account).apply(event));
+                long generation = sessionGeneration;
+                serial.execute(() -> {
+                    if (generation == sessionGeneration && started) {
+                        FoxMesEvents.getInstance(account).apply(event);
+                    }
+                });
             }
 
             @Override
             public void onGap(long resume) {
-                serial.execute(() -> handleGap(resume));
+                long generation = sessionGeneration;
+                serial.execute(() -> {
+                    if (generation == sessionGeneration && started) {
+                        handleGap(resume);
+                    }
+                });
             }
         });
         http.setOnUnauthorized(this::handleUnauthorized);
@@ -241,6 +252,7 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
         }, 1, 1, TimeUnit.SECONDS);
         ConnectionsManager.onSessionCreated(account);
         long seq = store().getLong("event_seq", 0);
+        socket.setLastSequence(seq);
         if (seq > 0) {
             socket.start(seq);
         }
@@ -278,7 +290,7 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
         realtimePaused = false;
         FoxMesLog.d("account " + account + ": realtime resumed");
         long seq = store().getLong("event_seq", 0);
-        if (started && seq > 0) {
+        if (started && lastGapResume == 0 && seq > 0) {
             socket.start(seq);
         }
     }
@@ -337,6 +349,8 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
 
     public synchronized void stop() {
         started = false;
+        sessionGeneration++;
+        FoxMesEvents.getInstance(account).invalidate();
         if (stickerFavorites != null) { stickerFavorites.stop(); stickerFavorites = null; }
         realtimePaused = false;
         if (tick != null) {
@@ -344,9 +358,12 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
             tick = null;
         }
         socket.stop();
+        updates.invalidate();
         serial.execute(() -> {
             callRequests.reset();
             FoxMesEvents.getInstance(account).reset();
+            gapGeneration++;
+            lastGapResume = 0;
         });
         snapshot = null;
         chatsLoaded = false;
@@ -405,7 +422,7 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
     }
 
     void startRealtimeIfNeeded(long eventSeq) {
-        if (!started) {
+        if (!started || lastGapResume > 0) {
             return;
         }
         if (realtimePaused) {
@@ -430,34 +447,61 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
         }
     }
 
-    private long lastGapResume;
+    private volatile long lastGapResume;
+    private long gapGeneration;
 
     private void handleGap(long resume) {
-        if (resume == lastGapResume) {
-            FoxMesLog.e("gap.detected repeats at " + resume + ", realtime stopped");
+        if (resume <= 0 || lastGapResume == resume) {
             return;
         }
         lastGapResume = resume;
+        long generation = ++gapGeneration;
+        socket.stop();
+        FoxMesEvents.getInstance(account).reset();
         stickerFavorites().refresh(true);
-        store().putLong("event_seq", Math.max(0, resume - 1));
-        synchronized (this) {
-            snapshot = null;
-            chatsLoaded = false;
+        retryGap(resume, generation, 1000);
+    }
+
+    private void retryGap(long resume, long generation, long delay) {
+        if (!started || generation != gapGeneration || lastGapResume != resume) {
+            return;
         }
+        try {
+            synchronized (this) {
+                snapshot = null;
+                chatsLoaded = false;
+            }
+            Snapshot current = snapshot(true);
+            if (!started || generation != gapGeneration) {
+                return;
+            }
+            FoxMesGapRecovery.reconcile(this, current,
+                    deleted -> serial.execute(() -> finishGap(resume, generation, deleted)));
+        } catch (IOException e) {
+            FoxMesLog.e("gap resync", e);
+            Utilities.stageQueue.postRunnable(
+                    () -> serial.execute(() -> retryGap(resume, generation, Math.min(delay * 2, 30_000))),
+                    delay);
+        }
+    }
+
+
+    private void finishGap(long resume, long generation, List<Integer> deleted) {
+        if (!started || generation != gapGeneration || lastGapResume != resume) {
+            return;
+        }
+        store().removeMessages(deleted);
+        store().putLong("event_seq", Math.max(0, resume - 1));
+        socket.setLastSequence(Math.max(0, resume - 1));
+        lastGapResume = 0;
         Utilities.stageQueue.postRunnable(() -> {
             TLRPC.TL_updatesTooLong tooLong = new TLRPC.TL_updatesTooLong();
             AccountInstance.getInstance(account).getMessagesController().processUpdates(tooLong, false);
         });
-        try {
-            snapshot(true);
-            lastGapResume = 0;
-        } catch (IOException e) {
-            FoxMesLog.e("gap resync", e);
+        if (!realtimePaused) {
+            socket.start(Math.max(0, resume - 1));
         }
-        socket.setLastSequence(Math.max(0, resume - 1));
-        socket.start(Math.max(0, resume - 1));
     }
-
 
     private void followOpenedChat() {
         long chatId = 0;
@@ -1086,7 +1130,11 @@ public final class FoxMesRuntime implements FoxMesTL.MapContext {
     }
 
     void stickerSetsChanged() {
-        updates.dispatch(Collections.singletonList(new TL_update.TL_updateStickerSets()), new ArrayList<>(), null);
+        stickerSetsChanged(null);
+    }
+
+    void stickerSetsChanged(Runnable afterApplied) {
+        updates.dispatch(Collections.singletonList(new TL_update.TL_updateStickerSets()), new ArrayList<>(), afterApplied);
         AndroidUtilities.runOnUIThread(() -> org.telegram.messenger.MediaDataController.getInstance(account)
                 .loadStickers(org.telegram.messenger.MediaDataController.TYPE_EMOJIPACKS, false, true));
     }

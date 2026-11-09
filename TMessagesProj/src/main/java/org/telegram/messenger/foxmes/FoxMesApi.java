@@ -250,9 +250,13 @@ public final class FoxMesApi {
         return http.request("DELETE", "/messages/" + id, null, null, DeleteResult.class);
     }
 
-    public DeleteResult batchDeleteMessages(long chatId, List<Integer> ids) throws IOException {
+    public DeleteResult batchDeleteMessages(long chatId, List<Integer> ids, String operationId) throws IOException {
         return http.request("DELETE", "/chats/" + chatId + "/messages/batch-delete", null,
-                FoxMesJson.body().putNumbers("message_ids", ids).put("operation_id", FoxMesJson.operationId()), DeleteResult.class);
+                FoxMesJson.body().putNumbers("message_ids", ids).put("operation_id", operationId), DeleteResult.class);
+    }
+
+    public JsonObject deleteOperation(String operationId) throws IOException {
+        return http.request("GET", "/operations/" + operationId, null, null, JsonObject.class);
     }
 
     public ReadState markRead(long chatId, Integer messageId) throws IOException {

@@ -45,8 +45,9 @@ public final class FoxMesEvents {
     private final int account;
     private final ArrayDeque<Event> pendingEvents = new ArrayDeque<>();
     private boolean retryScheduled;
+    private boolean applying;
     private long retryDelay = 1000;
-    private long replayGeneration;
+    private volatile long replayGeneration;
 
     private FoxMesEvents(int account) {
         this.account = account;
@@ -69,49 +70,78 @@ public final class FoxMesEvents {
             }
             return;
         }
+        if (event.seq <= runtime.store().getLong("event_seq", 0)) {
+            return;
+        }
+        for (Event pending : pendingEvents) {
+            if (pending.seq == event.seq) {
+                return;
+            }
+        }
         pendingEvents.addLast(event);
         drain(runtime);
     }
 
+    void invalidate() {
+        replayGeneration++;
+    }
+
     void reset() {
         pendingEvents.clear();
+        applying = false;
         retryScheduled = false;
         retryDelay = 1000;
         replayGeneration++;
     }
 
-    private void drain(FoxMesRuntime runtime) {
-        if (retryScheduled) {
-            return;
-        }
-        while (runtime.isStarted() && !pendingEvents.isEmpty()) {
-            Event event = pendingEvents.peekFirst();
-            try {
-                boolean dispatched = handle(runtime, event.type, event.dataObject(), event.seq);
-                if (!dispatched && event.seq > 0) {
-                    runtime.saveEventSeq(event.seq);
-                }
-            } catch (Exception e) {
-                FoxMesLog.e("event " + event.type, e);
-                if (FoxMesHttpException.isTransient(e)) {
-                    retryScheduled = true;
-                    long generation = replayGeneration;
-                    Utilities.stageQueue.postRunnable(() -> runtime.serial.execute(() -> {
-                        if (generation != replayGeneration) {
-                            return;
-                        }
-                        retryScheduled = false;
-                        drain(runtime);
-                    }), retryDelay);
-                    retryDelay = Math.min(retryDelay * 2, 30_000);
+    private Runnable acknowledgement(FoxMesRuntime runtime, long seq) {
+        long generation = replayGeneration;
+        return () -> {
+            if (seq <= 0) {
+                return;
+            }
+            runtime.serial.execute(() -> {
+                if (generation != replayGeneration || !runtime.isStarted()
+                        || pendingEvents.isEmpty() || pendingEvents.peekFirst().seq != seq) {
                     return;
                 }
-                if (event.seq > 0) {
-                    runtime.saveEventSeq(event.seq);
-                }
+                runtime.saveEventSeq(seq);
+                pendingEvents.removeFirst();
+                applying = false;
+                retryDelay = 1000;
+                drain(runtime);
+            });
+        };
+    }
+
+    private void drain(FoxMesRuntime runtime) {
+        if (retryScheduled || applying || !runtime.isStarted() || pendingEvents.isEmpty()) {
+            return;
+        }
+        Event event = pendingEvents.peekFirst();
+        applying = true;
+        try {
+            boolean dispatched = handle(runtime, event.type, event.dataObject(), event.seq);
+            if (!dispatched) {
+                acknowledgement(runtime, event.seq).run();
             }
-            pendingEvents.removeFirst();
-            retryDelay = 1000;
+        } catch (Exception e) {
+            FoxMesLog.e("event " + event.type, e);
+            applying = false;
+            if (FoxMesHttpException.isTransient(e)) {
+                retryScheduled = true;
+                long generation = replayGeneration;
+                Utilities.stageQueue.postRunnable(() -> runtime.serial.execute(() -> {
+                    if (generation != replayGeneration) {
+                        return;
+                    }
+                    retryScheduled = false;
+                    drain(runtime);
+                }), retryDelay);
+                retryDelay = Math.min(retryDelay * 2, 30_000);
+            } else {
+                acknowledgement(runtime, event.seq).run();
+            }
         }
     }
 
@@ -158,7 +188,7 @@ public final class FoxMesEvents {
                 return true;
             case "sticker_sets.updated":
                 if (!runtime.receiveStickerSets(FoxMesJson.parse(data, FoxMesModels.StickerSetsState.class))) return false;
-                runtime.stickerSetsChanged();
+                runtime.stickerSetsChanged(acknowledgement(runtime, seq));
                 return true;
             case "gifs.updated":
                 dispatch(runtime, Collections.singletonList(new TL_update.TL_updateSavedGifs()), new ArrayList<>(), seq);
@@ -183,7 +213,7 @@ public final class FoxMesEvents {
                 long chatId = chatIdOf(data);
                 JsonObject appearance = FoxMesJson.object(data, "appearance");
                 if (appearance == null || runtime.peerForChat(chatId) == 0) return chatsRefreshed(runtime, seq);
-                FoxMesChatAppearance.apply(runtime, chatId, FoxMesJson.parse(appearance, FoxMesChatAppearance.Appearance.class), seq > 0 ? () -> runtime.saveEventSeq(seq) : null);
+                FoxMesChatAppearance.apply(runtime, chatId, FoxMesJson.parse(appearance, FoxMesChatAppearance.Appearance.class), seq > 0 ? acknowledgement(runtime, seq) : null);
                 return true;
             }
             case "themes.updated":
@@ -206,7 +236,7 @@ public final class FoxMesEvents {
     }
 
     private void dispatch(FoxMesRuntime runtime, List<TLRPC.Update> updates, ArrayList<TLRPC.User> users, long seq) {
-        runtime.updates.dispatch(new ArrayList<>(updates), users, seq > 0 ? () -> runtime.saveEventSeq(seq) : null);
+        runtime.updates.dispatch(new ArrayList<>(updates), users, seq > 0 ? acknowledgement(runtime, seq) : null);
     }
 
     private static long chatIdOf(JsonObject data) {
@@ -454,7 +484,7 @@ public final class FoxMesEvents {
     private boolean settingsUpdated(FoxMesRuntime runtime, JsonObject data, long seq) throws IOException {
         JsonObject wallpaperDto = FoxMesJson.object(data, "default_wallpaper");
         if (wallpaperDto != null) {
-            FoxMesChatAppearance.applyDefault(runtime, FoxMesJson.parse(wallpaperDto, FoxMesChatAppearance.WallpaperState.class), () -> runtime.saveEventSeq(seq)); return true;
+            FoxMesChatAppearance.applyDefault(runtime, FoxMesJson.parse(wallpaperDto, FoxMesChatAppearance.WallpaperState.class), acknowledgement(runtime, seq)); return true;
         }
         JsonObject defaultsDto = FoxMesJson.object(data, "notification_defaults");
         if (defaultsDto == null) {

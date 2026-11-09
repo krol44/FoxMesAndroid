@@ -318,37 +318,69 @@ final class FoxMesMutationHandlers {
             list.add(id);
         }
         ArrayList<Integer> deleted = new ArrayList<>();
+        ArrayList<TLRPC.Update> restored = new ArrayList<>();
+        LinkedHashSet<Long> userIds = new LinkedHashSet<>();
+        ArrayList<Runnable> confirmed = new ArrayList<>();
         for (Map.Entry<Long, List<Integer>> entry : byChat.entrySet()) {
             List<Integer> ids = entry.getValue();
-            if (ids.size() > 1) {
+            for (int offset = 0; offset < ids.size(); offset += 100) {
+                ArrayList<Integer> batch = new ArrayList<>(ids.subList(offset, Math.min(ids.size(), offset + 100)));
+                DeleteResult result;
                 try {
-                    DeleteResult result = runtime.api.batchDeleteMessages(entry.getKey(), ids);
-                    if (result != null && result.deletedIds != null) {
-                        deleted.addAll(result.deletedIds);
-                    } else if (result != null && Boolean.TRUE.equals(result.ok)) {
-                        deleted.addAll(ids);
+                    result = FoxMesDeleteOperations.execute(runtime, entry.getKey(), batch);
+                } catch (FoxMesHttpException error) {
+                    if (r.isCancelled() || !runtime.isStarted()) {
+                        return;
                     }
-                    continue;
-                } catch (FoxMesHttpException e) {
-                    if (e.isTransient()) {
-                        throw e;
+                    if (!error.isTransient()) {
+                        restoreDeletedMessages(runtime, entry.getKey(), batch, restored, userIds);
+                        runtime.updates.dispatch(restored, runtime.tlUsers(userIds), null);
                     }
+                    throw error;
                 }
+                if (r.isCancelled() || !runtime.isStarted()) {
+                    return;
+                }
+                deleted.addAll(result.deletedIds);
+                ArrayList<Integer> refused = new ArrayList<>(result.skippedPinnedIds);
+                refused.addAll(result.rejectedIds);
+                restoreDeletedMessages(runtime, entry.getKey(), refused, restored, userIds);
+                long chatId = entry.getKey();
+                String operation = FoxMesDeleteOperations.operation(runtime, chatId, batch);
+                confirmed.add(() -> FoxMesDeleteOperations.complete(runtime, chatId, batch, operation));
             }
-            for (Integer id : ids) {
-                try {
-                    runtime.api.deleteMessage(id);
-                    deleted.add(id);
-                } catch (FoxMesHttpException e) {
-                    if (e.isTransient()) {
-                        throw e;
-                    }
-                    FoxMesLog.w("delete " + id + ": " + e.getMessage());
+        }
+        if (r.isCancelled() || !runtime.isStarted()) {
+            return;
+        }
+        runtime.store().removeMessages(deleted);
+        runtime.updates.dispatch(restored, runtime.tlUsers(userIds), () -> {
+            for (Runnable complete : confirmed) {
+                complete.run();
+            }
+            r.replyLate(() -> affectedMessages(runtime));
+        });
+    }
+
+    private static void restoreDeletedMessages(FoxMesRuntime runtime, long chatId, List<Integer> ids,
+                                               List<TLRPC.Update> updates, LinkedHashSet<Long> userIds) throws IOException {
+        for (Integer id : ids) {
+            try {
+                Message message = runtime.api.message(chatId, id);
+                TLRPC.Message restored = runtime.tlMessage(message);
+                restored.unread = false;
+                restored.media_unread = false;
+                TL_update.TL_updateNewMessage update = new TL_update.TL_updateNewMessage();
+                update.message = restored;
+                updates.add(update);
+                FoxMesRuntime.collectUserIds(message, userIds);
+                userIds.add(runtime.peerForChat(chatId));
+            } catch (FoxMesHttpException error) {
+                if (error.isTransient()) {
+                    throw error;
                 }
             }
         }
-        runtime.store().removeMessages(deleted);
-        r.replyLate(() -> affectedMessages(runtime));
     }
 
     private static void deleteHistory(FoxMesRequest r, FoxMesRuntime runtime) throws IOException {

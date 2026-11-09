@@ -18,8 +18,23 @@ public final class FoxMesUpdateEngine {
 
     private final int account;
     private int issued;
+    private volatile long generation;
     private final ArrayDeque<Entry> journal = new ArrayDeque<>();
     private final ArrayList<Runnable> waiting = new ArrayList<>();
+    private final ArrayList<Completion> completions = new ArrayList<>();
+
+    private static final class Completion {
+        final int pts;
+        final long generation;
+        final Runnable callback;
+
+        Completion(int pts, long generation, Runnable callback) {
+            this.pts = pts;
+            this.generation = generation;
+            this.callback = callback;
+        }
+    }
+
 
     private static final class Entry {
         final int pts;
@@ -54,10 +69,15 @@ public final class FoxMesUpdateEngine {
         return issued;
     }
 
+    public void invalidate() {
+        generation++;
+    }
+
     public void reset() {
         issued = 0;
         journal.clear();
         waiting.clear();
+        completions.clear();
     }
 
     public static boolean isPtsUpdate(TLRPC.Update update) {
@@ -120,12 +140,27 @@ public final class FoxMesUpdateEngine {
     }
 
     public void dispatch(List<TLRPC.Update> updates, ArrayList<TLRPC.User> users, Runnable afterApplied) {
+        long current = generation;
         Utilities.stageQueue.postRunnable(() -> {
+            if (current != generation) {
+                return;
+            }
             Runnable apply = () -> {
+                if (current != generation) {
+                    return;
+                }
                 TLRPC.TL_updates container = container(updates, users);
+                int target = 0;
+                for (TLRPC.Update update : updates) {
+                    if (isPtsUpdate(update)) {
+                        target = issued;
+                        break;
+                    }
+                }
                 AccountInstance.getInstance(account).getMessagesController().processUpdates(container, false);
                 if (afterApplied != null) {
-                    storage().getStorageQueue().postRunnable(afterApplied);
+                    completions.add(new Completion(target, current, afterApplied));
+                    flushCompletions();
                 }
             };
             if (!isReady()) {
@@ -137,7 +172,25 @@ public final class FoxMesUpdateEngine {
         });
     }
 
+    private void flushCompletions() {
+        Iterator<Completion> iterator = completions.iterator();
+        while (iterator.hasNext()) {
+            Completion completion = iterator.next();
+            if (completion.generation != generation) {
+                iterator.remove();
+            } else if (completion.pts <= storage().getLastPtsValue()) {
+                iterator.remove();
+                storage().getStorageQueue().postRunnable(() -> {
+                    if (completion.generation == generation) {
+                        completion.callback.run();
+                    }
+                });
+            }
+        }
+    }
+
     public void flushWaiting() {
+        flushCompletions();
         if (waiting.isEmpty() || !isReady()) {
             return;
         }
